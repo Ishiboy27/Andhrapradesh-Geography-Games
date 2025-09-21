@@ -1070,6 +1070,19 @@ function renderRightHUD(){
         </details>
       </div>`;
     safeInvalidate(); return;
+
+// Let the right HUD scroll without zooming the map
+if (rightHud) {
+  if (window.L && L.DomEvent) {
+    L.DomEvent.disableScrollPropagation(rightHud);
+    L.DomEvent.disableClickPropagation(rightHud);
+  } else {
+    // Fallback if Leaflet helper isn't available yet
+    ["wheel","mousewheel","DOMMouseScroll","touchmove"].forEach(ev =>
+      rightHud.addEventListener(ev, e => e.stopPropagation(), { passive:false })
+    );
+  }
+}
   }
 
   if (game==="DISTRICT"||game==="AC"||game==="PC"){
