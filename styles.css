@@ -67,15 +67,19 @@ a{color:inherit;text-decoration:none}
 .hidden{display:none!important}
 
 /* HUD on map right */
+/* Right HUD (keeps light theme, scrolls independently of the map) */
 #rightHud{
   position:absolute; top:16px; right:16px; z-index:500;
   background:rgba(255,255,255,.95); border:1px solid var(--border);
   border-radius:14px; padding:12px 14px; box-shadow:0 8px 24px rgba(0,0,0,.12);
   font-size:14px; line-height:1.35; color:#0f172a; max-width:280px;
+
+  /* make it scrollable */
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch; /* smooth on iOS */
 }
-#rightHud .row{justify-content:space-between}
-.hud-card{display:block}
-.hud-title{font-weight:700;margin-bottom:8px}
 
 /* Menu (if used on same sheet) */
 .menu .menu-wrap{max-width:920px;margin:40px auto;padding:0 16px}
