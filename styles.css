@@ -1,0 +1,305 @@
+:root{
+  --bg:#f7f7fb; --ink:#0f172a; --muted:#6b7280;
+  --card:#fff; --border:#e5e7eb;
+
+  /* Party colors */
+  --p-inc:#2563eb; --p-bjp:#f97316; --p-ysrcp: #0b5ad1; --p-tdp:#facc15;
+  --p-jsp:#ef4444;  --p-brs:#f9a8d4;  --p-aimim:#16a34a; --p-other:#94a3b8;
+    /* YSRCP: dark blue */
+     /* dark, saturated blue */
+
+  /* BRS: light pink */
+   /* light pink */
+
+  /* Neutral */
+  --neutral-stroke:#94a3b8; --neutral-fill:#e5e7eb;
+
+  /* Softer greens for non-first-try correct answers */
+  --ok2-fill:#b7e7c8; --ok2-stroke:#16a34a;
+  --ok3-fill:#d6f2e0; --ok3-stroke:#15803d;
+}
+/* --- Party color overrides --- */
+
+
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial}
+body{background:var(--bg);color:var(--ink)}
+a{color:inherit;text-decoration:none}
+
+/* Layout */
+.app{display:grid;grid-template-columns:360px 1fr;min-height:100%}
+.sidebar{background:#fff;border-right:1px solid var(--border);padding:16px 16px 24px;display:flex;flex-direction:column}
+.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.back{font-weight:600}
+
+/* Map column must have height for the absolutely-positioned #map */
+.map-wrap{
+  position: relative;
+  height: 100vh;      /* key fix */
+  min-height: 560px;  /* safety */
+  overflow: hidden;
+}
+#map{ position:absolute; inset:0; }
+
+/* Reusable blocks */
+.block{margin:12px 0}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:12px}
+.tag{background:#eef2ff;border:1px solid #e5e7eb;border-radius:999px;padding:4px 8px;font-size:12px}
+.small{font-size:12px}.muted{color:var(--muted)}
+.target{font-weight:700;font-size:18px;margin:6px 0}
+.status{min-height:20px;color:#0f172a}
+
+/* Rows, buttons, inputs */
+.row{display:flex;gap:8px;align-items:center;justify-content:space-between}
+.btn{border:1px solid var(--border);background:#fff;padding:8px 12px;border-radius:10px;cursor:pointer}
+.btn.primary{background:#0f172a;color:#fff;border-color:#0f172a}
+.input{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px}
+
+.segmented{display:flex;gap:10px;flex-wrap:wrap}
+.segmented.two button{flex:1}
+.segmented button{border:1px solid var(--border);background:#fff;border-radius:999px;padding:8px 12px;cursor:pointer}
+.segmented button.active{background:#0f172a;color:#fff;border-color:#0f172a}
+
+.grid-3 .label{color:var(--muted);font-size:12px}
+.grid-3 .value{font-size:24px;font-weight:700}
+
+.hidden{display:none!important}
+
+/* HUD on map right */
+#rightHud{
+  position:absolute; top:16px; right:16px; z-index:500;
+  background:rgba(255,255,255,.95); border:1px solid var(--border);
+  border-radius:14px; padding:12px 14px; box-shadow:0 8px 24px rgba(0,0,0,.12);
+  font-size:14px; line-height:1.35; color:#0f172a; max-width:280px;
+}
+#rightHud .row{justify-content:space-between}
+.hud-card{display:block}
+.hud-title{font-weight:700;margin-bottom:8px}
+
+/* Menu (if used on same sheet) */
+.menu .menu-wrap{max-width:920px;margin:40px auto;padding:0 16px}
+.menu h1{margin:0 0 8px}
+.card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-top:16px}
+.card-grid .card{padding:16px;border:1px solid var(--border);border-radius:16px;background:#fff;display:flex;flex-direction:column;gap:6px}
+.card-grid .emoji{font-size:28px}
+.card-grid .cta{margin-top:auto;font-weight:600;color:#0f172a}
+
+/* Tiny labels (also used for finish overlay) */
+.city-label,
+.finish-label{
+  background:rgba(255,255,255,.92);
+  color:#0f172a;
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:2px 6px;
+  box-shadow:0 4px 14px rgba(0,0,0,.12);
+  font: 8px/1.2 Inter, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+}
+.leaflet-tooltip-top:before,
+.leaflet-tooltip-bottom:before,
+.leaflet-tooltip-left:before,
+.leaflet-tooltip-right:before{ display:none; }
+
+/* Keep Leaflet defaults for icons */
+.leaflet-div-icon { background: transparent; border: none; }
+
+/* Smoother marker rendering */
+.leaflet-pane .leaflet-marker-icon { will-change: transform; }
+
+/* === Leaflet safety reset (no white veil) === */
+#map, .leaflet-container,
+.leaflet-pane, .leaflet-overlay-pane, .leaflet-tile-pane,
+.leaflet-pane canvas, .leaflet-pane svg {
+  background: transparent !important;
+}
+/* Explicitly force overlay SVG to be transparent in all browsers */
+.leaflet-overlay-pane > svg { background: transparent !important; }
+
+/* Never let context/drawn polygons fill */
+.leaflet-context-pane path { fill: none !important; }
+
+/* Don’t let generic styles resize markers (avoid tiles here) */
+.leaflet-pane img.leaflet-marker-icon,
+.leaflet-pane img.leaflet-marker-shadow,
+.leaflet-container img.leaflet-marker-icon,
+.leaflet-container img.leaflet-marker-shadow {
+  max-width: none !important;
+  width: auto !important;
+  height: auto !important;
+}
+
+/* FINAL safeguard: nothing inside #map paints a CSS background */
+#map, #map * { background: transparent !important; }
+
+/* ========= HUD extras ========= */
+.grid2{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+.chip{display:inline-flex; align-items:center; gap:6px; padding:6px 8px; border-radius:999px; background:#fff; border:1px solid var(--border)}
+.cat-mega{border-color:#eab30830}
+.cat-large{border-color:#ef444430}
+.cat-med{border-color:#3b82f630}
+.cat-small{border-color:#22c55e30}
+.spoiler{ filter: blur(3px); cursor: pointer; }
+.spoiler.revealed{ filter: none; }
+
+/* ========= Winners Match UI ========= */
+#matchPanel.card{ margin-top:12px; }
+#yearSlots{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+.slot{
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  border:1px dashed #cbd5e1; background:#fff; border-radius:10px; padding:8px 10px;
+  min-height:38px;
+}
+.slot .year{ font-weight:600 }
+.slot .drop{ flex:1; display:flex; gap:6px; align-items:center; justify-content:flex-end }
+.slot[data-state="disabled"]{ opacity:.5; background:#fafafa }
+.slot[data-state="locked"]{ border-style:solid }
+.slot.correct{ border-color:#10b981; box-shadow:0 0 0 2px rgba(16,185,129,.15) inset }
+.slot.wrong{ animation:shake .18s linear 2 }
+.slot.hover{ outline:2px dashed #94a3b8; outline-offset:2px; }
+
+#partyTray{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px }
+.chip.party{
+  display:inline-flex; align-items:center; gap:8px;
+  border-radius:999px; padding:6px 10px; cursor:grab; user-select:none;
+  border:1px solid #e5e7eb; background:#fff; font-weight:600; font-size:12px;
+}
+.chip.party.selected{ box-shadow:0 0 0 2px rgba(59,130,246,.25) inset }
+.chip.party:active{ cursor:grabbing }
+
+.dot{ width:12px; height:12px; border-radius:50% }
+.dot.inc{background:var(--p-inc)}
+.dot.bjp{background:var(--p-bjp)}
+.dot.ysrcp{background:var(--p-ysrcp)}
+.dot.tdp{background:var(--p-tdp)}
+.dot.jsp{background:var(--p-jsp)}
+.dot.brs{background:var(--p-brs)}
+.dot.aimim{background:var(--p-aimim)}
+.dot.ind{background:var(--p-other)}
+.dot.other{background:var(--p-other)}
+
+@keyframes fillPulse {
+  0%{fill-opacity:0.18}
+  50%{fill-opacity:0.6}
+  100%{fill-opacity:0}
+}
+@keyframes shake {
+  0%{transform:translateX(0)} 25%{transform:translateX(-3px)}
+  50%{transform:translateX(3px)} 75%{transform:translateX(-2px)} 100%{transform:translateX(0)}
+}
+/* ===== Winners panel theming (year slots) ===== */
+:root{
+  --wm-slot-bg:           #0e1622;   /* slot background */
+  --wm-slot-border:       #2b3a4a;   /* slot border (neutral) */
+  --wm-slot-year:         #bcd7ff;   /* year text color */
+  --wm-slot-disabled-bg:  #0b1220;   /* disabled slot background */
+  --wm-slot-hover-outline:#64748b;   /* outline on drag-over */
+  --wm-slot-correct-bg:   rgba(16,185,129,.12);
+  --wm-slot-correct-bdr:  #10b981;
+}
+
+/* Base slot look */
+#matchPanel #yearSlots .slot{
+  background: var(--wm-slot-bg);
+  border-color: var(--wm-slot-border);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.12);
+}
+
+/* Year label text */
+#matchPanel #yearSlots .slot .year{
+  color: var(--wm-slot-year);
+  font-weight: 700;
+  letter-spacing: .2px;
+}
+
+/* Disabled slots */
+#matchPanel #yearSlots .slot[data-state="disabled"]{
+  background: var(--wm-slot-disabled-bg);
+  opacity: .6;
+}
+
+/* Drag-over affordance */
+#matchPanel #yearSlots .slot.hover{
+  outline: 2px dashed var(--wm-slot-hover-outline);
+  outline-offset: 2px;
+}
+
+/* Correctly placed party */
+#matchPanel #yearSlots .slot.correct{
+  border-color: var(--wm-slot-correct-bdr);
+  box-shadow: 0 0 0 2px rgba(16,185,129,.15) inset;
+  background: var(--wm-slot-correct-bg);
+}
+
+/* (Optional) Make the chosen party text inside the drop more legible */
+#matchPanel #yearSlots .slot .drop strong{
+  color: #e5eefc;
+}
+
+/* --- DO NOT HIDE RASTER TILES ---
+   (the old block that set opacity:0 on .leaflet-tile was causing
+    the “no basemap” problem and has been removed) */
+
+/* Safety override in case any other sheet hides tiles */
+#map .leaflet-tile-pane img.leaflet-tile { opacity: 1 !important; pointer-events:auto !important; }
+/* ───────── District Game Splash ───────── */
+.splash {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  display: grid;
+  place-items: center;
+  z-index: 1200;
+}
+.splash.hidden { display: none; }
+
+.splash-card {
+  width: min(680px, 92vw);
+  background: #0b1620;            /* deep navy to match dark theme */
+  color: #e5f3ff;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 16px;
+  box-shadow: 0 18px 60px rgba(0,0,0,.45);
+  padding: 18px 18px 14px;
+}
+
+.splash-title {
+  font-weight: 800;
+  letter-spacing: .2px;
+  font-size: 18px;
+  margin: 2px 0 8px;
+}
+
+.splash-text {
+  margin: 0 0 12px;
+  line-height: 1.5;
+  color: #cfe6ff;
+}
+
+.splash-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #b9d8fb;
+  user-select: none;
+}
+
+.splash-actions {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.splash .btn.primary {
+  background: #0ea5e9;
+  border-color: #0ea5e9;
+  color: #03111a;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.splash .btn.primary:hover { filter: brightness(1.05); }

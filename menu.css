@@ -1,0 +1,125 @@
+/* ===== AP & TS Guessr — Compact Dark Menu (with hero header) ===== */
+:root{
+  --bg:#05070b;
+  --panel:#0c1420;
+  --ink:#e6f0ff;
+  --muted:#9fb0c6;
+  --line:#17253b;
+  --blue:#60a5fa;
+  --teal:#22d3ee;
+  --green:#22c55e;
+  --gold:#facc15;
+  --pink:#fb7185;
+}
+
+/* Page */
+html,body{height:100%}
+body{
+  margin:0;
+  background:
+    radial-gradient(900px 600px at -10% -10%, #0c1b34 0%, transparent 60%),
+    radial-gradient(900px 600px at 110% 10%, #081220 0%, transparent 60%),
+    var(--bg);
+  color:var(--ink);
+  font:14px/1.45 Inter, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Container */
+main.menu{
+  max-width:1100px;
+  margin:22px auto;
+  padding:0 18px;
+}
+
+/* ===== HERO HEADER ===== */
+.hero{
+  position:relative;
+  padding:16px 18px;
+  margin:6px 0 8px;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(34,197,94,.10), transparent 60%),
+    radial-gradient(120% 140% at 100% 0%, rgba(34,211,238,.10), transparent 60%),
+    linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02)),
+    var(--panel);
+  box-shadow:
+    0 10px 30px rgba(0,0,0,.35),
+    0 0 0 1px rgba(96,165,250,.12) inset;
+}
+.hero h1{
+  margin:0;
+  font-size:22px;
+  font-weight:800;
+  letter-spacing:.2px;
+  color:var(--ink);
+}
+.hero .sub{
+  margin:4px 0 0;
+  color:var(--muted);
+}
+
+/* Groups (compact grid) */
+.group{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
+  margin:16px 0 18px;
+}
+.group > h2{
+  grid-column:1 / -1;
+  margin:0 0 6px;
+  font:700 13px/1 Inter, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  color:#cbd5e1;
+  letter-spacing:.35px;
+  text-transform:uppercase;
+}
+
+/* Card links */
+a.item{
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+  min-height:56px;
+  padding:10px 12px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.015)),
+    var(--panel);
+  color:var(--ink);
+  text-decoration:none;
+  transition:transform .08s ease, border-color .12s ease, box-shadow .12s ease;
+  box-shadow:0 6px 18px rgba(34,211,238,.10);
+}
+a.item:hover{
+  transform:translateY(-1px);
+  border-color:#2a4975;
+  box-shadow:0 12px 28px rgba(96,165,250,.18);
+}
+
+/* Icon (small + colored) */
+.item .icon{
+  flex:0 0 18px;
+  width:18px; height:18px;
+  margin-top:2px;
+  display:inline-flex; align-items:center; justify-content:center;
+  color:var(--teal);
+  filter: drop-shadow(0 1px 4px rgba(0,0,0,.35));
+}
+.item .icon svg{ width:100%; height:100%; display:block; }
+
+/* Title + subtext */
+.item span{ font-weight:700; font-size:13.5px; line-height:1.2; display:block; }
+.item small{ color:var(--muted); font-size:12px; display:block; margin-top:2px; }
+
+/* Quick color helpers */
+.icon.blue { color:var(--blue); }
+.icon.teal { color:var(--teal); }
+.icon.green{ color:var(--green); }
+.icon.gold { color:var(--gold); }
+.icon.pink { color:var(--pink); }
+
+/* Responsive */
+@media (max-width:960px){ .group{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:560px){ .group{ grid-template-columns:1fr; } main.menu{ margin:16px auto; } }

@@ -1,0 +1,295 @@
+/* ============================================================
+   Andhra Pradesh Geography Games — DARK THEME (override pack)
+   Load AFTER your existing CSS (styles.css + menu.css).
+   ============================================================ */
+
+/* Palette + variables */
+:root{
+  --ink:#e6f2ff;
+  --muted:#9db2c3;
+  --card:#0f1f2b;
+  --border:#1d3347;
+
+  /* existing game colors (tuned for dark) */
+  --p-inc:#60a5fa; --p-bjp:#fb923c; --p-ysrcp:#34d399; --p-tdp:#fde047;
+  --p-jsp:#f87171; --p-brs:#fb7185; --p-aimim:#22c55e; --p-other:#9ca3af;
+
+  --ok-stroke:#22c55e; --ok-fill:#064e3b;
+  --ok2-stroke:#16a34a; --ok2-fill:#0b5d46;
+  --ok3-stroke:#15803d; --ok3-fill:#0e624c;
+  --bad-stroke:#f87171; --bad-fill:#711c28;
+}
+
+/* Global background */
+body{
+  background:
+    radial-gradient(1200px 800px at 15% -10%, #0b2236 0%, #071521 55%, #060e17 100%) fixed;
+  color:var(--ink);
+}
+
+/* ===== MAIN LAYOUT (game pages) ===== */
+
+/* <- THIS is the bit that beats your old .sidebar{background:#fff} */
+.sidebar{
+  background:#0b1926 !important;
+  border-right:1px solid var(--border) !important;
+  color:var(--ink) !important;
+  box-shadow:0 0 0 1px rgba(0,0,0,.06) inset, 0 14px 28px rgba(0,0,0,.35);
+}
+
+.top .tag{ background:#0e2234; border:1px solid #1e3951; color:#a6d7ff; }
+.small.muted, .muted{ color:var(--muted) !important; }
+.target{ color:#e9f6ff; }
+.status{ color:#daeeff; }
+
+/* Cards / blocks on the left + any info cards on right HUD */
+.card, .block, .item{
+  background:linear-gradient(180deg,#0f1f2d,#0b1723) !important;
+  border:1px solid var(--border) !important;
+  color:var(--ink) !important;
+  box-shadow:0 10px 30px rgba(0,0,0,.35);
+}
+
+/* Buttons / inputs / segmented controls */
+.btn{
+  background:#0e2234 !important;
+  border:1px solid #23455f !important;
+  color:#e8f6ff !important;
+}
+.btn:hover{ border-color:#2e6e92 !important; }
+.btn.primary{
+  background:#0c2a3f !important;
+  border-color:#2f7ea6 !important;
+  color:#e8f6ff !important;
+}
+.input{
+  background:#0b1b28 !important;
+  color:#e6f6ff !important;
+  border:1px solid #224059 !important;
+}
+.segmented button{
+  background:#0b1e2d !important;
+  border-color:#1e3951 !important;
+  color:#ddefff !important;
+}
+.segmented button.active{
+  background:#0f3350 !important;
+  border-color:#3697c9 !important;
+  color:#e6f6ff !important;
+}
+
+/* Right-side HUD on the map */
+#rightHud{
+  background:rgba(7,18,28,.92) !important;
+  border:1px solid #1e3951 !important;
+  color:#dfefff !important;
+  box-shadow:0 10px 32px rgba(0,0,0,.4);
+}
+#rightHud .hud-title{ color:#eaf7ff !important; }
+
+/* Tooltip labels */
+.city-label, .finish-label{
+  background:rgba(12,30,46,.96) !important;
+  border:1px solid #1f3a52 !important;
+  color:#e8f6ff !important;
+}
+
+/* Party chips (Winners games) */
+.chip{ background:#0e2234 !important; border-color:#1f3a52 !important; color:#dff3ff !important; }
+.chip.party.selected{ box-shadow:0 0 0 2px rgba(56,189,248,.35) inset; }
+
+/* Leaflet controls look dark */
+.leaflet-control-zoom a{
+  background:#0e2234 !important;
+  color:#dff3ff !important;
+  border:1px solid #1e3a56 !important;
+}
+.leaflet-bar a:hover{ background:#13344d !important; }
+.leaflet-container .leaflet-control-attribution{
+  background:#0b1b28 !important;
+  color:#9fb9cc !important;
+  border:1px solid #1e3a56 !important;
+}
+
+/* ===== MENU PAGE header (if used there too) ===== */
+.hero{
+  margin:-6px 0 18px;
+  padding:12px 16px;
+  border-radius:14px;
+  background:
+    radial-gradient(500px 200px at 8% -30%, rgba(56,189,248,.08), transparent 60%),
+    linear-gradient(180deg, rgba(2,132,199,.15), rgba(2,132,199,0));
+  border:1px solid #11324a;
+  box-shadow:0 8px 30px rgba(0,0,0,.35);
+}
+.hero h1{ margin:0 0 4px; font-size:24px; color:#dff3ff; }
+.hero p{ margin:0; color:var(--muted) }
+/* =========================
+   1) Right HUD contrast
+   ========================= */
+#rightHud{
+  background: rgba(7,18,28,.96)!important;
+  border-color:#264c68!important;
+}
+#rightHud, #rightHud .row span { color:#eaf6ff!important; }
+#rightHud .row strong{ color:#ffffff!important; font-weight:800; letter-spacing:.2px; }
+#rightHud .hud-title{ color:#fff!important; }
+#rightHud .small, #rightHud .muted{ color:#b9cfdd!important; }
+
+/* subtle inner highlight so text pops on light basemaps */
+#rightHud{ box-shadow:
+  inset 0 1px 0 rgba(255,255,255,.06),
+  0 12px 28px rgba(0,0,0,.40)
+}
+
+/* =========================
+   2) Titles + icons
+   ========================= */
+
+/* Accent you can tweak once */
+:root{ --accent: #61dafb; --accent2:#34d399; }
+
+/* --- Site/page title band (top) --- */
+/* If you wrap the top H1 in <header class="site-header">… (see HTML note) */
+.site-header{
+  position: sticky; top:0; z-index: 800;
+  background: linear-gradient(180deg,#071826,#0c2234);
+  border-bottom:1px solid #173a54;
+  box-shadow: 0 8px 26px rgba(0,0,0,.45);
+  padding: 10px 18px;
+}
+.site-header .title{
+  margin:0; color:#eaf6ff; font-weight:800; letter-spacing:.2px;
+}
+/* little compass icon before the main title */
+.site-header .title::before{
+  content:""; display:inline-block; width:20px; height:20px; margin-right:10px;
+  color: var(--accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='currentColor' d='M12 2a10 10 0 100 20 10 10 0 000-20Zm4.7 4.8l-3.2 7.6-7.6 3.2 3.2-7.6 7.6-3.2Z'/%3E%3C/svg%3E");
+  background-size:contain; background-repeat:no-repeat;
+  vertical-align:-4px; filter: drop-shadow(0 0 4px rgba(97,218,251,.25));
+}
+
+/* --- Sidebar title bar (slightly different background) --- */
+.sidebar{
+  /* independent scroll */
+  overflow-y:auto; max-height:100vh;
+  scrollbar-color: #2c536d #0b1b28; /* Firefox */
+}
+/* WebKit scrollbar styling */
+.sidebar::-webkit-scrollbar{ width:10px; }
+.sidebar::-webkit-scrollbar-track{ background:#0b1b28; }
+.sidebar::-webkit-scrollbar-thumb{ background:#204055; border-radius:8px; }
+.sidebar::-webkit-scrollbar-thumb:hover{ background:#2b5a76; }
+
+/* If you wrap the game title in <div class="titlebar"><h1>…</h1></div> */
+.sidebar .titlebar{
+  position: sticky; top:0; z-index:5;
+  background: linear-gradient(180deg,#0b1f2e,#0a1824);
+  border:1px solid #1b3a52;
+  padding:12px 14px;
+  margin:0 0 10px;
+  border-radius:12px;
+  box-shadow:0 8px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04);
+}
+.sidebar .titlebar h1{
+  margin:0; color:#eaf6ff; line-height:1.15; font-weight:800;
+}
+/* small grid/map icon before the sidebar H1 */
+.sidebar .titlebar h1::before{
+  content:""; display:inline-block; width:18px; height:18px; margin-right:8px;
+  color: var(--accent2);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='currentColor'%3E%3Crect x='3' y='3' width='7' height='7' rx='1.2'/%3E%3Crect x='14' y='3' width='7' height='7' rx='1.2'/%3E%3Crect x='3' y='14' width='7' height='7' rx='1.2'/%3E%3Crect x='14' y='14' width='7' height='7' rx='1.2'/%3E%3C/g%3E%3C/svg%3E");
+  background-size:contain; background-repeat:no-repeat;
+  vertical-align:-3px; filter: drop-shadow(0 0 4px rgba(52,211,153,.28));
+}
+
+/* Fallback: if you cannot add .titlebar wrapper, this targets the first H1 inside .sidebar */
+.sidebar > h1:first-of-type{
+  position: sticky; top:0; z-index:5; margin:0 0 10px;
+  padding:12px 14px; border-radius:12px;
+  background: linear-gradient(180deg,#0b1f2e,#0a1824);
+  border:1px solid #1b3a52;
+  box-shadow:0 8px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04);
+}
+.sidebar > h1:first-of-type::before{
+  content:""; display:inline-block; width:18px; height:18px; margin-right:8px;
+  color: var(--accent2);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='currentColor'%3E%3Crect x='3' y='3' width='7' height='7' rx='1.2'/%3E%3Crect x='14' y='3' width='7' height='7' rx='1.2'/%3E%3Crect x='3' y='14' width='7' height='7' rx='1.2'/%3E%3Crect x='14' y='14' width='7' height='7' rx='1.2'/%3E%3C/g%3E%3C/svg%3E");
+  background-size:contain; background-repeat:no-repeat; vertical-align:-3px;
+  filter: drop-shadow(0 0 4px rgba(52,211,153,.28));
+}
+/* ───────────────────────────────────────────────
+   LIGHT HUD (right-top district counter)
+   ─────────────────────────────────────────────── */
+#rightHud{
+  /* light, translucent panel */
+  background: rgba(255,255,255,0.95) !important;
+  border: 1px solid #e5e7eb !important;
+  color: #0f172a !important;
+  border-radius: 14px !important;
+
+  /* crisp + readable over maps */
+  box-shadow: 0 12px 28px rgba(15,23,42,.18), inset 0 1px 0 rgba(255,255,255,.5) !important;
+  backdrop-filter: saturate(1.1) blur(2px);
+}
+
+#rightHud .hud-title{ color:#0f172a !important; font-weight:800; }
+#rightHud .row span{ color:#334155 !important; }
+#rightHud .row strong{ color:#0f172a !important; font-weight:800; }
+#rightHud .small, #rightHud .muted{ color:#475569 !important; }
+
+/* ───────────────────────────────────────────────
+   SIDEBAR: independent scroll + dark scrollbar
+   ─────────────────────────────────────────────── */
+.sidebar{
+  max-height: 100vh;           /* full viewport height */
+  overflow-y: auto;            /* its own scroll */
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+
+  /* Firefox scrollbar colors */
+  scrollbar-width: thin;
+  scrollbar-color: #2b5a76 #0b1b28;
+}
+
+/* WebKit (Chrome/Edge/Safari) scrollbar */
+.sidebar::-webkit-scrollbar{ width: 10px; }
+.sidebar::-webkit-scrollbar-track{ background:#0b1b28; }
+.sidebar::-webkit-scrollbar-thumb{
+  background:#2b5a76; border-radius: 8px;
+}
+.sidebar::-webkit-scrollbar-thumb:hover{ background:#35759a; }
+/* ───────────────────────────────────────────────
+   MAP LABELS: keep original light style (always)
+   ─────────────────────────────────────────────── */
+
+/* City dots & end-of-game labels use these classes */
+#map .city-label,
+#map .finish-label {
+  background: rgba(255,255,255,0.92) !important;
+  color: #0f172a !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 8px !important;
+  padding: 2px 6px !important;
+  box-shadow: 0 4px 14px rgba(0,0,0,.12) !important;
+  font: 8px/1.2 Inter, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif !important;
+}
+
+/* Any other Leaflet tooltips on the map should also stay light */
+#map .leaflet-tooltip {
+  background: rgba(255,255,255,0.92) !important;
+  color: #0f172a !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 8px !important;
+  padding: 2px 6px !important;
+  box-shadow: 0 4px 14px rgba(0,0,0,.12) !important;
+}
+
+/* Hide the little pointer arrow so the chip looks the same everywhere */
+#map .leaflet-tooltip-top:before,
+#map .leaflet-tooltip-bottom:before,
+#map .leaflet-tooltip-left:before,
+#map .leaflet-tooltip-right:before {
+  display: none !important;
+}

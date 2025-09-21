@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+<h1 class="app-title">Andhra Pradesh Geography Games</h1>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- App styles (add your own tokens / classes here or keep your current styles.css) -->
+	<link rel="stylesheet" href="styles.css">
+	<link rel="stylesheet" href="theme-dark.css">
+
+  <style>
+    /* Minimal essentials in case your styles.css misses a few */
+    :root{
+      --ap-fill:#93c5fd; --ap-stroke:#3b82f6;
+      --ts-fill:#d8b4fe; --ts-stroke:#a855f7;
+      --ok-fill:#86efac; --ok-stroke:#22c55e;
+      --bad-fill:#fca5a5; --bad-stroke:#ef4444;
+      --river-stroke:#64748b; --hwy-stroke:#475569;
+      --p-inc:#2563eb; --p-bjp:#f59e0b; --p-ysrcp:#22c55e; --p-tdp:#facc15; --p-jsp:#ef4444; --p-brs:#a855f7; --p-aimim:#10b981; --p-other:#94a3b8;
+      --neutral-fill:#e5e7eb;
+      --city-mega:#facc15; --city-large:#ef4444; --city-med:#3b82f6; --city-small:#22c55e;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial}
+    .app{display:grid;grid-template-columns:360px 1fr;min-height:100%}
+    .sidebar{background:#fff;border-right:1px solid #e5e7eb;padding:16px 16px 24px;display:flex;flex-direction:column}
+    .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+    .map-wrap{position:relative}
+    #map{position:absolute;inset:0}
+    .block{margin:12px 0}
+    .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+    .card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:12px}
+    .stat .label{color:#6b7280;font-size:12px}
+    .stat .value{font-size:24px;font-weight:700}
+    .small{font-size:12px}.muted{color:#6b7280}
+    .segmented{display:flex;gap:8px}.segmented.two button{flex:1}
+    .segmented button{border:1px solid #e5e7eb;background:#fff;border-radius:999px;padding:8px 12px;cursor:pointer}
+    .segmented button.active{background:#0f172a;color:#fff;border-color:#0f172a}
+    .row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .btn{border:1px solid #e5e7eb;background:#fff;padding:8px 12px;border-radius:10px;cursor:pointer}
+    .btn.primary{background:#0f172a;color:#fff;border-color:#0f172a}
+    .input{width:100%;padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px}
+    .hidden{display:none!important}
+
+    /* City marker classes */
+    .city-ico{position:relative;display:inline-block}
+    .city-ico .glow{position:absolute;inset:-6px;border-radius:50%;box-shadow:0 0 0 6px rgba(34,197,94,.0);pointer-events:none}
+    .city-ico.solved .glow{box-shadow:0 0 0 6px rgba(34,197,94,.25)}
+
+    /* Right HUD */
+    #rightHud{position:absolute;top:16px;right:16px;z-index:500}
+    .hud-card{background:rgba(255,255,255,.94);border-radius:14px;padding:12px 14px;box-shadow:0 8px 24px rgba(0,0,0,.12);min-width:240px}
+    .hud-title{font-weight:600;margin-bottom:6px}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+    .chip{border:1px solid #e5e7eb;border-radius:10px;padding:6px 8px}
+    .cat-mega{background:#fffbea;border-color:#fcd34d}
+    .cat-large{background:#fff1f2;border-color:#fda4af}
+    .cat-med{background:#eff6ff;border-color:#93c5fd}
+    .cat-small{background:#ecfdf5;border-color:#86efac}
+  </style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <header class="top">
+      <h1 style="margin:0">AP &amp; TS District Guesser</h1>
+      <div id="dataSourceTag" class="tag muted">geojson: —</div>
+    </header>
+
+    <!-- Mode -->
+    <section class="block" id="modeBlock">
+      <div class="segmented" id="modeControls">
+        <button data-mode="AP">Andhra Pradesh</button>
+        <button data-mode="TS">Telangana</button>
+        <button data-mode="BOTH" class="active">Both</button>
+      </div>
+    </section>
+
+    <!-- Difficulty -->
+    <section class="block">
+      <div class="segmented two" id="difficultyControls">
+        <button data-diff="NORMAL" class="active">Normal (1 try)</button>
+        <button data-diff="PRACTICE">Practice (∞)</button>
+      </div>
+    </section>
+
+    <!-- Click / Type (for City & AC) -->
+    <section class="block" id="playBlock">
+      <div class="segmented two" id="playControls">
+        <button data-play="CLICK">Click</button>
+        <button data-play="TYPE" class="active">Type</button>
+      </div>
+    </section>
+
+    <!-- Stats -->
+    <section class="grid-3 block">
+      <div class="stat"><div class="label">Score</div><div id="score" class="value">0</div></div>
+      <div class="stat"><div class="label">Round</div><div id="round" class="value">1</div></div>
+      <div class="stat"><div class="label">Time</div><div id="time" class="value">0s</div></div>
+    </section>
+
+    <!-- Current target / actions -->
+    <section class="card block">
+      <div class="small muted">Find this …</div>
+      <div id="targetName" class="target">—</div>
+      <div class="row" style="margin-top:8px">
+        <button id="skipBtn" class="btn">Skip</button>
+        <button id="restartBtn" class="btn primary">Restart</button>
+      </div>
+    </section>
+
+    <!-- TYPE panel (for City/AC and Winners typing) -->
+    <section id="typePanel" class="block hidden">
+      <input id="typeInput" class="input" placeholder="Type answer…"/>
+      <div class="row" style="margin-top:8px">
+        <span class="small muted">Enter to submit</span>
+        <button id="typeSubmit" class="btn">Add</button>
+      </div>
+    </section>
+
+    <!-- Winners: Year selector -->
+    <section id="yearControls" class="block hidden"></section>
+
+    <!-- Winners: MC (four options) -->
+    <section id="mcRow" class="row gap block hidden">
+      <button id="opt1" class="btn">A</button>
+      <button id="opt2" class="btn">B</button>
+      <button id="opt3" class="btn">C</button>
+      <button id="opt4" class="btn">D</button>
+    </section>
+
+    <!-- Status -->
+    <section class="block"><div id="status" class="small"></div></section>
+
+    <!-- Info -->
+    <section class="block small muted">
+      <p>Place your <code>.geojson</code> files next to this page. Run a local server (e.g., <code>python -m http.server</code>).</p>
+      <p>Supported games via <code>?game=</code> : <strong>DISTRICT</strong>, <strong>RIVER</strong>, <strong>HIGHWAY</strong>, <strong>AC</strong>, <strong>PC</strong>, <strong>CITY</strong>, <strong>PEAK</strong>, <strong>WIN_AC</strong>, <strong>WIN_PC</strong>.</p>
+    </section>
+
+    <footer class="small muted" style="margin-top:auto">Built with Leaflet. Have fun! ✨</footer>
+  </aside>
+
+  <main class="map-wrap">
+    <div id="map"></div>
+    <div id="rightHud"></div>
+    <div class="hud">
+      <div class="chip">In play: <span id="districtCount">0</span></div>
+    </div>
+  </main>
+</div>
+
+<!-- App JS -->
+<script defer src="app.js?v=city-circles-1"></script>
+<script defer src="app.js?v=cities-hud-1"></script>
+<script defer src="app.js?v=fix-2025-09-20"></script>
+<!-- District disclaimer splash -->
+<div id="districtSplash" class="splash hidden" role="dialog" aria-modal="true" aria-labelledby="districtSplashTitle">
+  <div class="splash-card">
+    <div class="splash-title" id="districtSplashTitle">Disclaimer</div>
+    <p class="splash-text">
+      The districts here are accurate with Telangana's current district but not with Andhra Pradesh current districts as current andhra pradesh districts are nonsense. i made my own try guessing them they are better.
+    </p>
+    <label class="splash-check">
+      <input type="checkbox" id="districtSplashDont"> Don't show again
+    </label>
+    <div class="splash-actions">
+      <button class="btn primary" id="districtSplashOk">I understand</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
