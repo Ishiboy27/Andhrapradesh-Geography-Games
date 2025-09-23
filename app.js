@@ -2,12 +2,12 @@
    AP & TS Guessr — ALL GAMES (stable + Winners Match)
    - Basemap ON by default (?base=off to disable)
    - No white veil on map panes
-   - Remove district context layer for AC/PC and WIN_* games
+   - District filter for AC/PC and WIN_* using "districts" field
+   - AC/PC HUD: per-district coverage + fully solved counts
    - Winners (AC/PC): drag & drop, all parties always visible
-   - Filters: by State (AP/TS/BOTH) and by District (new)
-   - AC/PC: district coverage counts in right HUD
+   - Filters: by State (AP/TS/BOTH) and by District
    ========================================================== */
-console.log("APP JS LOADED v-stable-2025-09-20+wm-district+fix4");
+console.log("APP JS LOADED v-2025-09-21+districts-array+hud");
 
 // ---------- URL params ----------
 const urlParams = new URLSearchParams(location.search);
@@ -37,6 +37,7 @@ const KEYS = {
   STATE:    ["STATE","State","state","state_name","st_name","STATE_NM","STNAME","st","statecode","STATECODE"],
   DIST:     ["DISTRICT","District","district"],
   REGION:   ["REGION","Region","region"],
+  DISTS:    ["DISTRICTS","districts","DISTS","dists"], // <— plural "districts"
   PEAKNAME: ["Name","NAME","Peak","PEAK"],
   PEAKNOTES:["Notes","NOTES","note","NOTE","Desc","DESC"],
   PEAKCAT:  ["Category","category","TYPE","Type"],
@@ -155,6 +156,14 @@ function normalizeLabel(s){
     .replace(/\s+/g," ")
     .trim();
 }
+function parseDistricts(raw){
+  if(raw == null) return [];
+  if(Array.isArray(raw)) return raw.map(normalizeLabel).filter(Boolean);
+  return String(raw)
+    .split(/[,&/;]+/g) // commas, &, /, ;
+    .map(s => normalizeLabel(s))
+    .filter(Boolean);
+}
 function css(v,f){ const x=getComputedStyle(document.documentElement).getPropertyValue(v).trim(); return x||f; }
 async function loadGeoJSON(url){
   const r=await fetch(url,{cache:"no-store"});
@@ -229,16 +238,16 @@ let pool=[], nonCityLayer=null, cityFG=null, selection={}, target=null;
 let score=0, round=1, timer=0, isGameOver=false;
 
 let stateTotals={ap:0,ts:0}, stateSolved={ap:0,ts:0};
-
-// CITY progress
 let coveredPop=0,totalPop=0,catTotals={mega:0,large:0,med:0,small:0},catSolved={mega:0,large:0,med:0,small:0};
 let cityByDistrict=new Map(), solvedCities=new Set(), districtFullSolved=new Set();
 let districtCoveredAny = new Set();
 
-// AC/PC district coverage
-let acpcDistrictTotals=new Map();    // district -> total seats (in pool)
-let acpcDistrictSolved=new Map();    // district -> solved seats
-let acpcDistrictAll=0, acpcDistrictCovered=0, acpcDistrictFull=0;
+// AC/PC district coverage tallies
+let acpcDistrictTotals = new Map();
+let acpcDistrictSolved = new Map();
+let acpcDistrictCovered = 0; // districts with any solved seat
+let acpcDistrictFull    = 0; // districts with all seats solved
+let acpcDistrictAll     = 0; // unique districts in pool
 
 // ---------- Tries / points ----------
 const DISTRICT_MAX_TRIES = 3;
@@ -285,20 +294,8 @@ function winnersAllowedLabelsForSeat(seat){
   if(game==="WIN_PC") return YEARS_PC_ALL.slice();
   return st==="Andhra Pradesh" ? YEARS_AC_AP.slice()
        : st==="Telangana"      ? YEARS_AC_TS.slice()
-       : [...new Set([...YEARS_AC_AP, ...YEERS_AC_TS])]; // <-- fixed below
+       : [...new Set([...YEARS_AC_AP, ...YEERS_AC_TS])];
 }
-// (fix typo: YEERS_ -> YEARS_)
-(function(){ if (typeof winnersAllowedLabelsForSeat === "function") {
-  const fn = winnersAllowedLabelsForSeat;
-  winnersAllowedLabelsForSeat = (seat)=>{
-    const st=seat?.properties?.__state;
-    if(game==="WIN_PC") return YEARS_PC_ALL.slice();
-    return st==="Andhra Pradesh" ? YEARS_AC_AP.slice()
-         : st==="Telangana"      ? YEARS_AC_TS.slice()
-         : [...new Set([...YEARS_AC_AP, ...YEARS_AC_TS])];
-  };
-}})();
-
 function resolveYearKey(partyByYear, displayLabel){
   if(displayLabel in partyByYear) return displayLabel;
   if((displayLabel+"LS") in partyByYear) return displayLabel+"LS";
@@ -350,7 +347,14 @@ function wm_buildForTarget(){
   const nm = seat.properties.__name;
   const yearMap = seat.properties.__partyByYear || {};
 
-  const labels = winnersAllowedLabelsForSeat(seat);
+  const labels = (function(){
+    const st=seat.properties.__state;
+    if(game==="WIN_PC") return YEARS_PC_ALL.slice();
+    return st==="Andhra Pradesh" ? YEARS_AC_AP.slice() :
+           st==="Telangana"      ? YEARS_AC_TS.slice() :
+           [...new Set([...YEARS_AC_AP,...YEARS_AC_TS])];
+  })();
+
   wm_currentSlots = [];
   wm_yearKeyByLabel={};
   wm_attemptsByLabel={}; wm_lockedByLabel={}; wm_solvedYears=0;
@@ -481,10 +485,15 @@ async function ensure(key){
       feats = normalizeFeatures(fc, KEYS.HIGHWAY);
     } else if(key==="AC" || key==="PC"){
       feats = fc.features.map(f=>{
-        const nm=normalizeLabel(getProp(f.properties, key==="AC"?KEYS.AC:KEYS.PC));
-        const st=normalizeState(getProp(f.properties, KEYS.STATE));
-        const dist=normalizeLabel(getProp(f.properties, KEYS.DIST) || getProp(f.properties, KEYS.REGION) || "");
-        return {...f, properties:{...f.properties, __name:nm, __state:st, __district:dist}};
+        const nm  = normalizeLabel(getProp(f.properties, key==="AC"?KEYS.AC:KEYS.PC));
+        const st  = normalizeState(getProp(f.properties, KEYS.STATE));
+        const raw = getProp(f.properties, KEYS.DISTS)
+                 ?? getProp(f.properties, KEYS.DIST)
+                 ?? getProp(f.properties, KEYS.REGION)
+                 ?? "";
+        const dArr = parseDistricts(raw);
+        const dMain = dArr[0] || "";
+        return {...f, properties:{...f.properties, __name:nm, __state:st, __district:dMain, __districts:dArr}};
       }).filter(f=>!!f.properties.__name);
     } else if(key==="CITY"){
       feats = fc.features.map(f=>{
@@ -505,15 +514,20 @@ async function ensure(key){
     } else if(key==="WIN_AC"||key==="WIN_PC"){
       feats = fc.features.map(f=>{
         const seatKeys = key==="WIN_AC" ? KEYS.AC : KEYS.PC;
-        const nm=normalizeLabel(getProp(f.properties, seatKeys));
-        const st=normalizeState(getProp(f.properties, KEYS.STATE));
-        const region=normalizeLabel(getProp(f.properties, KEYS.REGION) || getProp(f.properties, KEYS.DIST) || "");
+        const nm  = normalizeLabel(getProp(f.properties, seatKeys));
+        const st  = normalizeState(getProp(f.properties, KEYS.STATE));
+        const raw = getProp(f.properties, KEYS.DISTS)
+                 ?? getProp(f.properties, KEYS.REGION)
+                 ?? getProp(f.properties, KEYS.DIST)
+                 ?? "";
+        const dArr  = parseDistricts(raw);
+        const dMain = dArr[0] || "";
         const partyByYear={};
         for(const yf of YEAR_FIELDS){
           const val=getProp(f.properties, yf);
           if(val!=null && String(val).trim()!==""){ partyByYear[yf]=normParty(val); }
         }
-        return {...f, properties:{...f.properties,__name:nm,__state:st,__region:region,__district:region,__partyByYear:partyByYear}};
+        return {...f, properties:{...f.properties,__name:nm,__state:st,__district:dMain,__districts:dArr,__partyByYear:partyByYear}};
       }).filter(f=>!!f.properties.__name);
     }
     all[key]=feats; loaded[key]=true; return true;
@@ -532,15 +546,18 @@ function rebuildPool(){
     if(mode==="AP" && !(st==="Andhra Pradesh" || st==="Unknown")) return false;
     if(mode==="TS" && !(st==="Telangana" || st==="Unknown")) return false;
     if(districtFilter!=="ALL"){
-      const d = normalizeLabel(f.properties.__district || f.properties.__region || "");
-      if(d !== normalizeLabel(districtFilter)) return false;
+      const want = normalizeLabel(districtFilter);
+      const arr  = (f.properties.__districts && f.properties.__districts.length)
+                 ? f.properties.__districts
+                 : [normalizeLabel(f.properties.__district || "")];
+      const hit = arr.map(normalizeLabel).includes(want);
+      if (!hit) return false;
     }
     return true;
   });
 
   if(countEl) countEl.textContent = pool.length;
 
-  // Cities
   if(game==="CITY"){
     totalPop=0; catTotals={mega:0,large:0,med:0,small:0}; cityByDistrict.clear(); districtFullSolved.clear();
     for(const f of pool){
@@ -551,7 +568,6 @@ function rebuildPool(){
     recalcCityProgress();
   }
 
-  // AC/PC — state and district tallies
   if(game==="DISTRICT"||game==="AC"||game==="PC"){
     stateTotals={ap:0,ts:0}; stateSolved={ap:0,ts:0};
     for(const f of pool){
@@ -559,27 +575,32 @@ function rebuildPool(){
       if(bucket){ stateTotals[bucket]++; if(isCorrectTag(selection[f.properties.__name])) stateSolved[bucket]++; }
     }
   }
-  if(game==="AC"||game==="PC"){
+
+  // AC/PC district tallies (multi-district aware)
+  if (game==="AC" || game==="PC"){
     acpcDistrictTotals.clear();
     acpcDistrictSolved.clear();
-    for(const f of pool){
-      const d = normalizeLabel(f.properties.__district||"");
-      if(!d) continue;
-      acpcDistrictTotals.set(d, (acpcDistrictTotals.get(d)||0)+1);
-      if(isCorrectTag(selection[f.properties.__name])){
-        acpcDistrictSolved.set(d,(acpcDistrictSolved.get(d)||0)+1);
-      }
+
+    for (const f of pool){
+      const arr = (f.properties.__districts && f.properties.__districts.length)
+                ? f.properties.__districts
+                : [normalizeLabel(f.properties.__district||"")].filter(Boolean);
+      const solved = isCorrectTag(selection[f.properties.__name]);
+      arr.forEach(d=>{
+        const dn=normalizeLabel(d); if(!dn) return;
+        acpcDistrictTotals.set(dn,(acpcDistrictTotals.get(dn)||0)+1);
+        if(solved) acpcDistrictSolved.set(dn,(acpcDistrictSolved.get(dn)||0)+1);
+      });
     }
     acpcDistrictAll = acpcDistrictTotals.size;
     acpcDistrictCovered = 0; acpcDistrictFull = 0;
-    for(const [d,total] of acpcDistrictTotals.entries()){
+    for (const [d,total] of acpcDistrictTotals.entries()){
       const s = acpcDistrictSolved.get(d)||0;
-      if(s>0) acpcDistrictCovered++;
-      if(total>0 && s===total) acpcDistrictFull++;
+      if (s>0) acpcDistrictCovered++;
+      if (s===total) acpcDistrictFull++;
     }
   }
 
-  // Winners: preserve seat-complete set within filter
   if(game==="WIN_AC"||game==="WIN_PC"){
     wm_completedSeatNames = new Set([...wm_completedSeatNames].filter(n => pool.some(f=>f.properties.__name===n)));
     wm_seatsCompleted = wm_completedSeatNames.size;
@@ -682,6 +703,7 @@ function styleForFeature(f){
   const type = f.geometry?.type || "";
   const isLine = /LineString/i.test(type);
 
+  // Points (CITY/PEAK handled elsewhere)
   if (game === "CITY" || game === "PEAK") return {};
 
   // --- Base stroke/fill (neutral) ---
@@ -699,12 +721,10 @@ function styleForFeature(f){
     weight = 3;
     fillOpacity = 0;
   } else if (game === "AC" || game === "PC" || game === "WIN_AC" || game === "WIN_PC") {
-    // Outline only by default (no fills) until guessed/wrong/reveal
     color = "#64748b";
     weight = 1.2;
     fillOpacity = 0;
   } else {
-    // Districts etc: soft state fill as base
     const ap = (f.properties.__state === "Andhra Pradesh");
     color     = ap ? css("--ap-stroke", "#3b82f6") : css("--ts-stroke", "#a855f7");
     fillColor = ap ? css("--ap-fill",   "#93c5fd") : css("--ts-fill",   "#d8b4fe");
@@ -712,7 +732,7 @@ function styleForFeature(f){
     fillOpacity = isLine ? 0 : 0.45;
   }
 
-  // --- Guess/reveal overrides (apply to ALL polygon games) ---
+  // --- Guess/reveal overrides ---
   if (isCorrectTag(sel)) {
     const first  = sel === "correct" || sel === "correct1";
     const second = sel === "correct2";
@@ -755,6 +775,7 @@ function bindCityLabel(layer, name){
 }
 
 function rebuildLayer(fit=true){
+  // city-mode class only for CITY game
   map.getContainer().classList.toggle("city-mode", game==="CITY");
 
   if(nonCityLayer){ nonCityLayer.remove(); nonCityLayer=null; }
@@ -864,12 +885,16 @@ function rebuildDistrictFilterOptions(){
     const st=f.properties.__state;
     if(mode==="AP" && st!=="Andhra Pradesh" && st!=="Unknown") continue;
     if(mode==="TS" && st!=="Telangana" && st!=="Unknown") continue;
-    const d = normalizeLabel(f.properties.__district || f.properties.__region || "");
-    if(d) districts.add(d);
+    const arr = (f.properties.__districts && f.properties.__districts.length)
+              ? f.properties.__districts
+              : [normalizeLabel(f.properties.__district||"")];
+    arr.forEach(d => { if(d) districts.add(d); });
   }
   const arr=[...districts].sort((a,b)=>a.localeCompare(b));
   const cur = districtFilter;
-  districtSelect.innerHTML = `<option value="ALL">All districts</option>` + arr.map(d=>`<option value="${d}">${d}</option>`).join("");
+  districtSelect.innerHTML =
+    `<option value="ALL">All districts</option>` +
+    arr.map(d=>`<option value="${d}">${d}</option>`).join("");
   if(arr.includes(cur)) districtSelect.value = cur; else { districtSelect.value="ALL"; districtFilter="ALL"; }
 }
 
@@ -1075,14 +1100,21 @@ function populationBreakdownHTML(){
   }).join("");
 }
 function acpcDistrictBreakdownHTML(){
-  const items=[...acpcDistrictTotals.entries()].map(([d,total])=>{
-    const s = acpcDistrictSolved.get(d)||0;
-    return {d,total,s};
-  }).sort((a,b)=> a.d.localeCompare(b.d));
-  if(!items.length) return `<div class="small muted" style="margin-top:6px">No districts in view.</div>`;
-  return items.map(({d,total,s}) => `<div class="row"><span>${d}</span><strong>${s}/${total}</strong></div>`).join("");
+  const rows = [...acpcDistrictTotals.entries()]
+    .sort((a,b)=>{
+      const as=acpcDistrictSolved.get(a[0])||0, bs=acpcDistrictSolved.get(b[0])||0;
+      if(bs!==as) return bs-as;
+      return a[0].localeCompare(b[0]);
+    })
+    .map(([d,tot])=>{
+      const s=acpcDistrictSolved.get(d)||0;
+      return `<div class="row"><span>${d}</span><strong>${s}/${tot}</strong></div>`;
+    });
+  if(!rows.length) return `<div class="small muted" style="margin-top:6px">No districts in current filter.</div>`;
+  return rows.join("");
 }
 
+// ---------- HUD ----------
 function renderRightHUD(){
   if(!rightHud) return;
 
@@ -1090,7 +1122,7 @@ function renderRightHUD(){
     const pct = totalPop>0 ? Math.round((coveredPop/totalPop)*1000)/10 : 0;
     const citiesSolved = solvedCities.size;
     const citiesTotal  = pool.length;
-    const oldDistCovered = districtFullSolved.size;
+    const oldDistCovered = districtCoveredAny.size;
     const oldDistTotal   = oldDistrictDenom();
 
     rightHud.innerHTML = `
@@ -1116,22 +1148,34 @@ function renderRightHUD(){
           <div style="margin-top:8px">${districtBreakdownHTML()}</div>
         </details>
       </div>`;
-  } else if (game==="DISTRICT"||game==="AC"||game==="PC"){
-    const totSolved = stateSolved.ap + stateSolved.ts; const tot = stateTotals.ap + stateTotals.ts;
+    // Let the right HUD scroll without zooming the map
+    if (rightHud) {
+      if (window.L && L.DomEvent) {
+        L.DomEvent.disableScrollPropagation(rightHud);
+        L.DomEvent.disableClickPropagation(rightHud);
+      } else {
+        ["wheel","mousewheel","DOMMouseScroll","touchmove"].forEach(ev =>
+          rightHud.addEventListener(ev, e => e.stopPropagation(), { passive:false })
+        );
+      }
+    }
+    safeInvalidate(); 
+    return;
+  }
 
-    // AC/PC add district coverage blocks
+  if (game==="AC"||game==="PC"||game==="DISTRICT"){
     let extra = "";
-    if(game==="AC"||game==="PC"){
+    if (game!=="DISTRICT") {
       extra = `
         <div class="row"><span>Districts covered</span><strong>${acpcDistrictCovered}/${acpcDistrictAll}</strong></div>
         <div class="row"><span>Fully solved districts</span><strong>${acpcDistrictFull}/${acpcDistrictAll}</strong></div>
         <details style="margin-top:8px">
-          <summary class="small" style="cursor:pointer">By district (expand)</summary>
+          <summary class="small" style="cursor:pointer;color:#0f172a">By district (expand)</summary>
           <div style="margin-top:8px">${acpcDistrictBreakdownHTML()}</div>
         </details>
       `;
     }
-
+    const totSolved = stateSolved.ap + stateSolved.ts; const tot = stateTotals.ap + stateTotals.ts;
     rightHud.innerHTML = `
       <div class="hud-card"><div class="hud-title">${game==="DISTRICT"?"Districts":game}</div>
         <div class="row"><span>AP</span><strong>${stateSolved.ap}/${stateTotals.ap}</strong></div>
@@ -1139,7 +1183,10 @@ function renderRightHUD(){
         <div class="row"><span>Total</span><strong>${totSolved}/${tot}</strong></div>
         ${extra}
       </div>`;
-  } else if (game==="WIN_AC" || game==="WIN_PC"){
+    return;
+  }
+
+  if (game==="WIN_AC" || game==="WIN_PC"){
     const seat = target;
     let rows = "";
     if(seat){
@@ -1158,22 +1205,10 @@ function renderRightHUD(){
         ${rows ? `<div style="margin-top:8px">${rows}</div>` : ""}
       </div>
     `;
-  } else {
-    rightHud.innerHTML = "";
+    return;
   }
 
-  // Let the right HUD scroll without zooming the map (always)
-  if (rightHud) {
-    if (window.L && L.DomEvent) {
-      L.DomEvent.disableScrollPropagation(rightHud);
-      L.DomEvent.disableClickPropagation(rightHud);
-    } else {
-      ["wheel","mousewheel","DOMMouseScroll","touchmove"].forEach(ev =>
-        rightHud.addEventListener(ev, e => e.stopPropagation(), { passive:false })
-      );
-    }
-  }
-
+  rightHud.innerHTML = "";
   safeInvalidate();
 }
 
@@ -1378,12 +1413,15 @@ function startTimer(){
   timerHandle=setInterval(()=>{ timer++; if(timeEl) timeEl.textContent=`${timer}s`; },1000);
 }
 
-// ---------- District disclaimer splash ----------
+// ---------- District splash ----------
 const LS_KEY_SPLASH_HIDE = "apts_district_disclaimer_hide";
 function showDistrictSplash(startCallback){
   if(!splashEl) { startCallback?.(); return; }
   splashEl.classList.remove("hidden");
+
+  // trap focus basic: focus button
   setTimeout(()=>{ try{ splashOkBtn?.focus(); }catch{} }, 0);
+
   function finish(){
     const dont = !!splashDontInp?.checked;
     if(dont){ try{ localStorage.setItem(LS_KEY_SPLASH_HIDE, "1"); }catch{} }
@@ -1391,7 +1429,12 @@ function showDistrictSplash(startCallback){
     startCallback?.();
   }
   splashOkBtn?.addEventListener("click", finish, { once:true });
-  document.addEventListener("keydown", (e)=>{ if(e.key==="Enter"||e.key==="Escape"){ e.preventDefault(); finish(); } }, { once:true });
+
+  // allow Enter/Escape
+  function onKey(e){
+    if(e.key === "Enter" || e.key === "Escape"){ e.preventDefault(); finish(); }
+  }
+  document.addEventListener("keydown", onKey, { once:true });
 }
 
 // ---------- Init ----------
@@ -1407,6 +1450,7 @@ function showDistrictSplash(startCallback){
     requestAnimationFrame(()=> map.invalidateSize());
   };
 
+  // Show disclaimer only for DISTRICT and only if not hidden
   let shouldShow = (game === "DISTRICT");
   try { shouldShow = shouldShow && !localStorage.getItem(LS_KEY_SPLASH_HIDE); } catch {}
 
