@@ -5,8 +5,9 @@
    - Remove district context layer for AC/PC and WIN_* games
    - Winners (AC/PC): drag & drop, all parties always visible
    - Filters: by State (AP/TS/BOTH) and by District (new)
+   - AC/PC: district coverage counts in right HUD
    ========================================================== */
-console.log("APP JS LOADED v-stable-2025-09-20+wm-district+fix3");
+console.log("APP JS LOADED v-stable-2025-09-20+wm-district+fix4");
 
 // ---------- URL params ----------
 const urlParams = new URLSearchParams(location.search);
@@ -228,9 +229,16 @@ let pool=[], nonCityLayer=null, cityFG=null, selection={}, target=null;
 let score=0, round=1, timer=0, isGameOver=false;
 
 let stateTotals={ap:0,ts:0}, stateSolved={ap:0,ts:0};
+
+// CITY progress
 let coveredPop=0,totalPop=0,catTotals={mega:0,large:0,med:0,small:0},catSolved={mega:0,large:0,med:0,small:0};
 let cityByDistrict=new Map(), solvedCities=new Set(), districtFullSolved=new Set();
 let districtCoveredAny = new Set();
+
+// AC/PC district coverage
+let acpcDistrictTotals=new Map();    // district -> total seats (in pool)
+let acpcDistrictSolved=new Map();    // district -> solved seats
+let acpcDistrictAll=0, acpcDistrictCovered=0, acpcDistrictFull=0;
 
 // ---------- Tries / points ----------
 const DISTRICT_MAX_TRIES = 3;
@@ -277,8 +285,20 @@ function winnersAllowedLabelsForSeat(seat){
   if(game==="WIN_PC") return YEARS_PC_ALL.slice();
   return st==="Andhra Pradesh" ? YEARS_AC_AP.slice()
        : st==="Telangana"      ? YEARS_AC_TS.slice()
-       : [...new Set([...YEARS_AC_AP, ...YEARS_AC_TS])];
+       : [...new Set([...YEARS_AC_AP, ...YEERS_AC_TS])]; // <-- fixed below
 }
+// (fix typo: YEERS_ -> YEARS_)
+(function(){ if (typeof winnersAllowedLabelsForSeat === "function") {
+  const fn = winnersAllowedLabelsForSeat;
+  winnersAllowedLabelsForSeat = (seat)=>{
+    const st=seat?.properties?.__state;
+    if(game==="WIN_PC") return YEARS_PC_ALL.slice();
+    return st==="Andhra Pradesh" ? YEARS_AC_AP.slice()
+         : st==="Telangana"      ? YEARS_AC_TS.slice()
+         : [...new Set([...YEARS_AC_AP, ...YEARS_AC_TS])];
+  };
+}})();
+
 function resolveYearKey(partyByYear, displayLabel){
   if(displayLabel in partyByYear) return displayLabel;
   if((displayLabel+"LS") in partyByYear) return displayLabel+"LS";
@@ -520,6 +540,7 @@ function rebuildPool(){
 
   if(countEl) countEl.textContent = pool.length;
 
+  // Cities
   if(game==="CITY"){
     totalPop=0; catTotals={mega:0,large:0,med:0,small:0}; cityByDistrict.clear(); districtFullSolved.clear();
     for(const f of pool){
@@ -530,6 +551,7 @@ function rebuildPool(){
     recalcCityProgress();
   }
 
+  // AC/PC — state and district tallies
   if(game==="DISTRICT"||game==="AC"||game==="PC"){
     stateTotals={ap:0,ts:0}; stateSolved={ap:0,ts:0};
     for(const f of pool){
@@ -537,7 +559,27 @@ function rebuildPool(){
       if(bucket){ stateTotals[bucket]++; if(isCorrectTag(selection[f.properties.__name])) stateSolved[bucket]++; }
     }
   }
+  if(game==="AC"||game==="PC"){
+    acpcDistrictTotals.clear();
+    acpcDistrictSolved.clear();
+    for(const f of pool){
+      const d = normalizeLabel(f.properties.__district||"");
+      if(!d) continue;
+      acpcDistrictTotals.set(d, (acpcDistrictTotals.get(d)||0)+1);
+      if(isCorrectTag(selection[f.properties.__name])){
+        acpcDistrictSolved.set(d,(acpcDistrictSolved.get(d)||0)+1);
+      }
+    }
+    acpcDistrictAll = acpcDistrictTotals.size;
+    acpcDistrictCovered = 0; acpcDistrictFull = 0;
+    for(const [d,total] of acpcDistrictTotals.entries()){
+      const s = acpcDistrictSolved.get(d)||0;
+      if(s>0) acpcDistrictCovered++;
+      if(total>0 && s===total) acpcDistrictFull++;
+    }
+  }
 
+  // Winners: preserve seat-complete set within filter
   if(game==="WIN_AC"||game==="WIN_PC"){
     wm_completedSeatNames = new Set([...wm_completedSeatNames].filter(n => pool.some(f=>f.properties.__name===n)));
     wm_seatsCompleted = wm_completedSeatNames.size;
@@ -640,7 +682,6 @@ function styleForFeature(f){
   const type = f.geometry?.type || "";
   const isLine = /LineString/i.test(type);
 
-  // Points (CITY/PEAK handled elsewhere)
   if (game === "CITY" || game === "PEAK") return {};
 
   // --- Base stroke/fill (neutral) ---
@@ -658,7 +699,7 @@ function styleForFeature(f){
     weight = 3;
     fillOpacity = 0;
   } else if (game === "AC" || game === "PC" || game === "WIN_AC" || game === "WIN_PC") {
-    // Outline only by default (no masking/veil).
+    // Outline only by default (no fills) until guessed/wrong/reveal
     color = "#64748b";
     weight = 1.2;
     fillOpacity = 0;
@@ -671,7 +712,7 @@ function styleForFeature(f){
     fillOpacity = isLine ? 0 : 0.45;
   }
 
-  // --- Guess/reveal overrides (apply to ALL polygon games, incl. AC/PC/WIN_*) ---
+  // --- Guess/reveal overrides (apply to ALL polygon games) ---
   if (isCorrectTag(sel)) {
     const first  = sel === "correct" || sel === "correct1";
     const second = sel === "correct2";
@@ -685,7 +726,7 @@ function styleForFeature(f){
     color = stroke;
     fillColor = fill;
     weight = isLine ? 6 : 3;
-    fillOpacity = isLine ? 0 : 0.75;   // <- visible highlight on polygons
+    fillOpacity = isLine ? 0 : 0.75;
     return isLine ? { color, weight } : { color, weight, fillColor, fillOpacity };
   }
 
@@ -707,7 +748,6 @@ function styleForFeature(f){
   return isLine ? { color, weight } : { color, weight, fillColor, fillOpacity };
 }
 
-
 function bindCityLabel(layer, name){
   if(!layer || !name || layer._cityLabelBound) return;
   layer.bindTooltip(name, { permanent:true, direction:"top", offset:[0,-6], className:"city-label" });
@@ -715,7 +755,6 @@ function bindCityLabel(layer, name){
 }
 
 function rebuildLayer(fit=true){
-  // city-mode class only for CITY game
   map.getContainer().classList.toggle("city-mode", game==="CITY");
 
   if(nonCityLayer){ nonCityLayer.remove(); nonCityLayer=null; }
@@ -995,7 +1034,7 @@ function applyVisibility(){
   }
 }
 
-// ---------- HUD ----------
+// ---------- HUD helpers ----------
 function districtBreakdownHTML(){
   const rows=[];
   const entries=[...cityByDistrict.entries()].sort((a,b)=>{
@@ -1035,6 +1074,14 @@ function populationBreakdownHTML(){
     `;
   }).join("");
 }
+function acpcDistrictBreakdownHTML(){
+  const items=[...acpcDistrictTotals.entries()].map(([d,total])=>{
+    const s = acpcDistrictSolved.get(d)||0;
+    return {d,total,s};
+  }).sort((a,b)=> a.d.localeCompare(b.d));
+  if(!items.length) return `<div class="small muted" style="margin-top:6px">No districts in view.</div>`;
+  return items.map(({d,total,s}) => `<div class="row"><span>${d}</span><strong>${s}/${total}</strong></div>`).join("");
+}
 
 function renderRightHUD(){
   if(!rightHud) return;
@@ -1069,34 +1116,30 @@ function renderRightHUD(){
           <div style="margin-top:8px">${districtBreakdownHTML()}</div>
         </details>
       </div>`;
-    safeInvalidate(); return;
-
-// Let the right HUD scroll without zooming the map
-if (rightHud) {
-  if (window.L && L.DomEvent) {
-    L.DomEvent.disableScrollPropagation(rightHud);
-    L.DomEvent.disableClickPropagation(rightHud);
-  } else {
-    // Fallback if Leaflet helper isn't available yet
-    ["wheel","mousewheel","DOMMouseScroll","touchmove"].forEach(ev =>
-      rightHud.addEventListener(ev, e => e.stopPropagation(), { passive:false })
-    );
-  }
-}
-  }
-
-  if (game==="DISTRICT"||game==="AC"||game==="PC"){
+  } else if (game==="DISTRICT"||game==="AC"||game==="PC"){
     const totSolved = stateSolved.ap + stateSolved.ts; const tot = stateTotals.ap + stateTotals.ts;
+
+    // AC/PC add district coverage blocks
+    let extra = "";
+    if(game==="AC"||game==="PC"){
+      extra = `
+        <div class="row"><span>Districts covered</span><strong>${acpcDistrictCovered}/${acpcDistrictAll}</strong></div>
+        <div class="row"><span>Fully solved districts</span><strong>${acpcDistrictFull}/${acpcDistrictAll}</strong></div>
+        <details style="margin-top:8px">
+          <summary class="small" style="cursor:pointer">By district (expand)</summary>
+          <div style="margin-top:8px">${acpcDistrictBreakdownHTML()}</div>
+        </details>
+      `;
+    }
+
     rightHud.innerHTML = `
       <div class="hud-card"><div class="hud-title">${game==="DISTRICT"?"Districts":game}</div>
         <div class="row"><span>AP</span><strong>${stateSolved.ap}/${stateTotals.ap}</strong></div>
         <div class="row"><span>TS</span><strong>${stateSolved.ts}/${stateTotals.ts}</strong></div>
         <div class="row"><span>Total</span><strong>${totSolved}/${tot}</strong></div>
+        ${extra}
       </div>`;
-    return;
-  }
-
-  if (game==="WIN_AC" || game==="WIN_PC"){
+  } else if (game==="WIN_AC" || game==="WIN_PC"){
     const seat = target;
     let rows = "";
     if(seat){
@@ -1115,10 +1158,22 @@ if (rightHud) {
         ${rows ? `<div style="margin-top:8px">${rows}</div>` : ""}
       </div>
     `;
-    return;
+  } else {
+    rightHud.innerHTML = "";
   }
 
-  rightHud.innerHTML = "";
+  // Let the right HUD scroll without zooming the map (always)
+  if (rightHud) {
+    if (window.L && L.DomEvent) {
+      L.DomEvent.disableScrollPropagation(rightHud);
+      L.DomEvent.disableClickPropagation(rightHud);
+    } else {
+      ["wheel","mousewheel","DOMMouseScroll","touchmove"].forEach(ev =>
+        rightHud.addEventListener(ev, e => e.stopPropagation(), { passive:false })
+      );
+    }
+  }
+
   safeInvalidate();
 }
 
@@ -1322,15 +1377,13 @@ function startTimer(){
   if(timeEl) timeEl.textContent=`${timer}s`;
   timerHandle=setInterval(()=>{ timer++; if(timeEl) timeEl.textContent=`${timer}s`; },1000);
 }
-const LS_KEY_SPLASH_HIDE = "apts_district_disclaimer_hide";
 
+// ---------- District disclaimer splash ----------
+const LS_KEY_SPLASH_HIDE = "apts_district_disclaimer_hide";
 function showDistrictSplash(startCallback){
   if(!splashEl) { startCallback?.(); return; }
   splashEl.classList.remove("hidden");
-
-  // trap focus basic: focus button
   setTimeout(()=>{ try{ splashOkBtn?.focus(); }catch{} }, 0);
-
   function finish(){
     const dont = !!splashDontInp?.checked;
     if(dont){ try{ localStorage.setItem(LS_KEY_SPLASH_HIDE, "1"); }catch{} }
@@ -1338,15 +1391,9 @@ function showDistrictSplash(startCallback){
     startCallback?.();
   }
   splashOkBtn?.addEventListener("click", finish, { once:true });
-
-  // allow Enter/Escape
-  function onKey(e){
-    if(e.key === "Enter" || e.key === "Escape"){ e.preventDefault(); finish(); }
-  }
-  document.addEventListener("keydown", onKey, { once:true });
+  document.addEventListener("keydown", (e)=>{ if(e.key==="Enter"||e.key==="Escape"){ e.preventDefault(); finish(); } }, { once:true });
 }
 
-// ---------- Init ----------
 // ---------- Init ----------
 (async function init(){
   await addDistrictContext();
@@ -1360,7 +1407,6 @@ function showDistrictSplash(startCallback){
     requestAnimationFrame(()=> map.invalidateSize());
   };
 
-  // Show disclaimer only for DISTRICT and only if not hidden
   let shouldShow = (game === "DISTRICT");
   try { shouldShow = shouldShow && !localStorage.getItem(LS_KEY_SPLASH_HIDE); } catch {}
 
