@@ -35,7 +35,7 @@ const KEYS = {
   CITYNAME: ["Name","NAME","City","CITY","City_Name","CITY_NAME","Town","TOWN"],
   CITYPOP:  ["2011 population","2011 Population","Population 2011","Population (2011)","2011_population","Population_2011","POP_2011","POP2011","2011pop","pop2011","Population","population","POP","Pop","TOT_P","TOT_POP","TOTAL_POP","Total_Pop"],
   STATE:    ["STATE","State","state","state_name","st_name","STATE_NM","STNAME","st","statecode","STATECODE"],
-  DIST:     ["DISTRICT","District","district"],
+  DISTRICT: ["DISTRICT","District","district"],
   REGION:   ["REGION","Region","region"],
   PEAKNAME: ["Name","NAME","Peak","PEAK"],
   PEAKNOTES:["Notes","NOTES","note","NOTE","Desc","DESC"],
@@ -510,7 +510,7 @@ async function ensure(key){
       feats = fc.features.map(f=>{
         const nm=normalizeLabel(getProp(f.properties, KEYS.CITYNAME));
         const st=normalizeState(getProp(f.properties, KEYS.STATE));
-        const dist=normalizeLabel(getProp(f.properties, KEYS.DIST)||"");
+        const dist=normalizeLabel(getProp(f.properties, KEYS.DISTRICT)||"");
         return {...f, properties:{...f.properties,__name:nm,__state:st,__district:dist}};
       }).filter(f=>!!f.properties.__name);
     } else if(key==="PEAK"){
@@ -527,7 +527,7 @@ async function ensure(key){
         const seatKeys = key==="WIN_AC" ? KEYS.AC : KEYS.PC;
         const nm=normalizeLabel(getProp(f.properties, seatKeys));
         const st=normalizeState(getProp(f.properties, KEYS.STATE));
-        const region=normalizeLabel(getProp(f.properties, KEYS.REGION) || getProp(f.properties, KEYS.DIST) || "");
+        const region=normalizeLabel(getProp(f.properties, KEYS.REGION) || getProp(f.properties, KEYS.DISTRICT) || "");
         const partyByYear={};
         for(const yf of YEAR_FIELDS){
           const val=getProp(f.properties, yf);
