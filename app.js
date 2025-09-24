@@ -2,18 +2,16 @@
    AP & TS Guessr — ALL GAMES (stable + Winners Match)
    - Basemap ON by default (?base=off to disable)
    - No white veil on map panes
-   - AC filter + counters use DISTRICT field (single)
-   - PC/Winners support multi-district via DISTRICTS/DISTRICT/REGION
-   - AC/PC HUD: per-district coverage + fully solved counts
+   - Remove district context layer for AC/PC and WIN_* games
    - Winners (AC/PC): drag & drop, all parties always visible
-   - Filters: by State (AP/TS/BOTH) and by District
+   - Filters: by State (AP/TS/BOTH) and by District (new)
    ========================================================== */
-console.log("APP JS LOADED v-2025-09-24 AC filter + district counts (fix)");
+console.log("APP JS LOADED v-stable-2025-09-20+wm-district+fix3");
 
-/* ---------------- URL params ---------------- */
+// ---------- URL params ----------
 const urlParams = new URLSearchParams(location.search);
 
-/* ---------------- Data paths ---------------- */
+// ---------- Data paths ----------
 const PATHS = {
   DISTRICT: "ap_ts_districts.geojson",
   RIVER:    "ap_ts_rivers.geojson",
@@ -26,11 +24,9 @@ const PATHS = {
   WIN_PC:   "ap_ts_pc_winners.geojson",
 };
 
-/* ---------------- Field keys ----------------
-   IMPORTANT: For AC we must catch *all* district field variants. */
+// ---------- Field keys ----------
 const KEYS = {
-  // very long list to be safe across files
-  DISTRICT: ["DISTRICT","District","district","NAME_2","DIST_NAME","DISTNAME","dt_name","district_name","DIST","Dist","dist","dt","DT_NAME","DT_NM"],
+  DISTRICT: ["DISTRICT","district","NAME_2","DIST_NAME","DISTNAME","dt_name","district_name"],
   AC:       ["AC","AC_NAME","acname","ACNAME","Constituency","constituency","assembly","NAME","Name"],
   PC:       ["PC","PC_NAME","pcname","PCNAME","Parliament","parliament","NAME","Name"],
   RIVER:    ["rivname","RIVER","RIVER_NAME","NAME","NAME_EN","R_NAME","river"],
@@ -38,9 +34,8 @@ const KEYS = {
   CITYNAME: ["Name","NAME","City","CITY","City_Name","CITY_NAME","Town","TOWN"],
   CITYPOP:  ["2011 population","2011 Population","Population 2011","Population (2011)","2011_population","Population_2011","POP_2011","POP2011","2011pop","pop2011","Population","population","POP","Pop","TOT_P","TOT_POP","TOTAL_POP","Total_Pop"],
   STATE:    ["STATE","State","state","state_name","st_name","STATE_NM","STNAME","st","statecode","STATECODE"],
+  DIST:     ["DISTRICT","District","district"],
   REGION:   ["REGION","Region","region"],
-  // plural for PCs (some sources list multiple districts as a string)
-  DISTS:    ["DISTRICTS","districts","DISTS","dists","DIST_LIST","dist_list"],
   PEAKNAME: ["Name","NAME","Peak","PEAK"],
   PEAKNOTES:["Notes","NOTES","note","NOTE","Desc","DESC"],
   PEAKCAT:  ["Category","category","TYPE","Type"],
@@ -51,7 +46,7 @@ const YEARS_AC_AP = ["2009","2014","2019","2024"];
 const YEARS_AC_TS = ["2009","2014","2018","2023"];
 const YEARS_PC_ALL= ["2009","2014","2019","2024"];
 
-/* ---------------- DOM ---------------- */
+// ---------- DOM ----------
 const $  = (s)=>document.querySelector(s);
 const $$ = (s)=>Array.from(document.querySelectorAll(s));
 
@@ -61,7 +56,7 @@ const roundEl  = $("#round");
 const targetEl = $("#targetName");
 const statusEl = $("#status");
 const sourceTag= $("#dataSourceTag");
-const countEl  = $("#districtCount"); // shows pool size on the HUD header
+const countEl  = $("#districtCount");
 
 const modeBtns = $$("#modeControls button");
 const diffBtns = $$("#difficultyControls button");
@@ -83,13 +78,13 @@ const skipBtn = $("#skipBtn");   // becomes "Next" in winners
 const restartBtn = $("#restartBtn");
 let revealBtn = null;            // created dynamically
 
-// Winners UI (lazy)
+// ---- Winners match UI (lazy) ----
 let matchPanel=null, yearSlotsEl=null, partyTrayEl=null;
 
-// District filter UI (lazy)
+// ---- District filter UI (lazy) ----
 let districtSection=null, districtSelect=null;
 
-/* ---------------- Map ---------------- */
+// ---------- Map ----------
 const showBase = (urlParams.get("base") || "on").toLowerCase() !== "off";
 
 const map = L.map("map", {
@@ -99,23 +94,25 @@ const map = L.map("map", {
   markerZoomAnimation: true
 }).setView([17.5,78.5],6);
 
+let baseLayer = null;
 if (showBase) {
-  L.tileLayer(
+  baseLayer = L.tileLayer(
     "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
     { subdomains:"abcd", attribution:"&copy; OpenStreetMap contributors &copy; CARTO" }
   ).addTo(map);
 }
 
-// No white veil anywhere
+// Keep every pane fully transparent (no white veil)
 map.whenReady(() => {
   ["mapPane","tilePane","overlayPane","shadowPane","markerPane","popupPane"].forEach(p=>{
     const el=map.getPane(p); if(el) el.style.background="transparent";
   });
   map.getContainer().style.background="transparent";
 });
+
 map.fitBounds(L.latLngBounds([[6.5,67.0],[35.5,97.5]]),{padding:[20,20]});
 
-// Context outlines (hidden for AC/PC/winners)
+// Context (district outlines)
 const contextPane = map.createPane("context");
 contextPane.style.zIndex=350;
 contextPane.style.pointerEvents="none";
@@ -127,9 +124,9 @@ let districtsContextLayer=null, contextDistrictsFC=null;
 // End-of-game labels
 let finishLabelsLayer = null;
 
-const safeInvalidate = ()=> requestAnimationFrame(()=> map.invalidateSize({debounceMoveend:true}));
+function safeInvalidate(){ requestAnimationFrame(()=> map.invalidateSize({debounceMoveend:true})); }
 
-/* ---------------- Utils ---------------- */
+// ---------- Utils ----------
 function getProp(props, keys){
   if(!props) return undefined;
   if(Array.isArray(keys)){
@@ -157,13 +154,7 @@ function normalizeLabel(s){
     .replace(/\s+/g," ")
     .trim();
 }
-function parseDistricts(raw){
-  if(raw == null) return [];
-  if(Array.isArray(raw)) return raw.map(normalizeLabel).filter(Boolean);
-  // split on commas, ampersands, slashes, pipes, semicolons
-  return String(raw).split(/[,&/;|]+/g).map(normalizeLabel).filter(Boolean);
-}
-const css = (v,f)=> (getComputedStyle(document.documentElement).getPropertyValue(v).trim()||f);
+function css(v,f){ const x=getComputedStyle(document.documentElement).getPropertyValue(v).trim(); return x||f; }
 async function loadGeoJSON(url){
   const r=await fetch(url,{cache:"no-store"});
   if(!r.ok) throw new Error(`${url} ${r.status}`);
@@ -171,9 +162,9 @@ async function loadGeoJSON(url){
   if(j?.type!=="FeatureCollection") throw new Error(`Invalid FeatureCollection for ${url}`);
   return j;
 }
-const isCorrectTag = (v)=> v==="correct" || (typeof v==="string" && v.startsWith("correct"));
+function isCorrectTag(v){ return v==="correct" || (typeof v==="string" && v.startsWith("correct")); }
 
-/* ---------------- City helpers ---------------- */
+// ---------- City helpers ----------
 function parsePop(val){
   if(val==null) return 0;
   if(typeof val==="number") return Math.round(val);
@@ -186,10 +177,14 @@ function parsePop(val){
   m=low.match(/([\d.,]+)\s*k\b/);             if(m) return Math.round(parseFloat(m[1].replace(/[,\s]/g,""))*1000);
   const n=parseFloat(s.replace(/[^\d.-]/g,"")); return isFinite(n)?Math.round(n):0;
 }
-const cityPop=(props)=>{ let raw=getProp(props,KEYS.CITYPOP); if(raw==null){ for(const k of Object.keys(props)) if(/pop/i.test(k)){ raw=props[k]; break; } } return parsePop(raw); };
-const cityCat=(n)=> n>=1000000?"mega":n>=200000?"large":n>=100000?"med":"small";
+function cityPop(props){
+  let raw=getProp(props,KEYS.CITYPOP);
+  if(raw==null){ for(const k of Object.keys(props)) if(/pop/i.test(k)){ raw=props[k]; break; } }
+  return parsePop(raw);
+}
+function cityCat(n){ return n>=1000000?"mega":n>=200000?"large":n>=100000?"med":"small"; }
 
-/* ---------------- Party colors ---------------- */
+// ---------- Party colors ----------
 const PARTY_ALIASES={
   inc:"inc",congress:"inc",indiannationalcongress:"inc",
   bjp:"bjp",bharatiyajanataparty:"bjp",
@@ -201,11 +196,21 @@ const PARTY_ALIASES={
   ind:"ind",independent:"ind",
   others:"other", other:"other"
 };
-const normParty = (raw)=> PARTY_ALIASES[String(raw||"").toLowerCase().replace(/[^a-z]/g,"")] || (raw?"other":"other");
-const PARTY_COLORS={inc:"var(--p-inc)",bjp:"var(--p-bjp)",ysrcp:"var(--p-ysrcp)",tdp:"var(--p-tdp)",jsp:"var(--p-jsp)",brs:"var(--p-brs)",aimim:"var(--p-aimim)",ind:"var(--p-other)",other:"var(--p-other)"};
-const partyColor = (p)=> PARTY_COLORS[p]||"var(--p-other)";
+function normParty(raw){ const k=String(raw||"").toLowerCase().replace(/[^a-z]/g,""); return PARTY_ALIASES[k] || (k? "other":"other"); }
+const PARTY_COLORS={
+  inc:"var(--p-inc)",
+  bjp:"var(--p-bjp)",
+  ysrcp:"var(--p-ysrcp)",
+  tdp:"var(--p-tdp)",
+  jsp:"var(--p-jsp)",
+  brs:"var(--p-brs)",
+  aimim:"var(--p-aimim)",
+  ind:"var(--p-other)",
+  other:"var(--p-other)"
+};
+const partyColor = p => PARTY_COLORS[p]||"var(--p-other)";
 
-/* ---------------- Game state ---------------- */
+// ---------- Game state ----------
 const pGame     = (urlParams.get("game")||"DISTRICT").toUpperCase();
 let game=["DISTRICT","RIVER","HIGHWAY","AC","PC","CITY","PEAK","WIN_AC","WIN_PC"].includes(pGame)?pGame:"DISTRICT";
 
@@ -213,7 +218,7 @@ let mode = $("#modeControls .active")?.dataset.mode || "BOTH";
 let difficulty = $("#difficultyControls .active")?.dataset.diff || "NORMAL";
 let playStyle = (game==="CITY"||game==="AC"||game==="PC") ? "TYPE" : "CLICK";
 
-// play-by-district filter value
+// new: play-by-district
 let districtFilter = "ALL";
 
 let all={DISTRICT:[],RIVER:[],HIGHWAY:[],AC:[],PC:[],CITY:[],PEAK:[],WIN_AC:[],WIN_PC:[]};
@@ -227,14 +232,12 @@ let coveredPop=0,totalPop=0,catTotals={mega:0,large:0,med:0,small:0},catSolved={
 let cityByDistrict=new Map(), solvedCities=new Set(), districtFullSolved=new Set();
 let districtCoveredAny = new Set();
 
-// AC/PC district coverage tallies
+// AC/PC district progress maps (needed by HUD / logic)
 let acpcDistrictTotals = new Map();
 let acpcDistrictSolved = new Map();
-let acpcDistrictAll    = 0;
-let acpcDistrictCovered= 0;
-let acpcDistrictFull   = 0;
+let acpcDistrictAll = 0, acpcDistrictCovered = 0, acpcDistrictFull = 0;
 
-/* ---------------- Points / tries ---------------- */
+// ---------- Tries / points ----------
 const DISTRICT_MAX_TRIES = 3;
 const DISTRICT_POINTS = [10,7,5];
 let districtAttemptCount = 0;
@@ -246,7 +249,7 @@ const HIGHWAY_POINTS = [10,7,5]; let highwayAttemptCount = 0;
 const AC_POINTS = [10,7,5]; let acAttemptCount = 0; let acTypeWrongsSinceLastCorrect = 0;
 const PC_POINTS = [10,7,5]; let pcAttemptCount = 0; let pcTypeWrongsSinceLastCorrect = 0;
 
-/* ---------------- Winners (shared) ---------------- */
+// ---------- Winners Match (shared) ----------
 const WM_POINTS=[5,3,1];
 const PARTY_SET_ALL = ["inc","bjp","ysrcp","tdp","jsp","brs","aimim","ind","other"];
 
@@ -255,7 +258,7 @@ let wm_currentSlots=[], wm_yearKeyByLabel={};
 let wm_completedSeatNames=new Set(); let wm_seatsCompleted=0;
 let wm_seatLayer=null;
 
-/* ---------------- Winners UI ---------------- */
+// ---------- Winners UI ----------
 function ensureMatchUI(){
   if(matchPanel && yearSlotsEl && partyTrayEl) return;
   const anchor = targetEl?.closest("section.card") || typePanel?.previousElementSibling || $(".sidebar .card");
@@ -274,16 +277,18 @@ function ensureMatchUI(){
   yearSlotsEl = matchPanel.querySelector("#yearSlots");
   partyTrayEl = matchPanel.querySelector("#partyTray");
 }
-const winnersAllowedLabelsForSeat=(seat)=>{
+function winnersAllowedLabelsForSeat(seat){
   const st=seat?.properties?.__state;
   if(game==="WIN_PC") return YEARS_PC_ALL.slice();
   return st==="Andhra Pradesh" ? YEARS_AC_AP.slice()
        : st==="Telangana"      ? YEARS_AC_TS.slice()
-       : [...new Set([...YEERS_AC_AP, ...YEARS_AC_TS])]; // fallback (shouldn’t hit)
-};
-const resolveYearKey=(partyByYear, displayLabel)=>
-  (displayLabel in partyByYear) ? displayLabel : ((displayLabel+"LS") in partyByYear ? displayLabel+"LS" : null);
-
+       : [...new Set([...YEARS_AC_AP, ...YEARS_AC_TS])];
+}
+function resolveYearKey(partyByYear, displayLabel){
+  if(displayLabel in partyByYear) return displayLabel;
+  if((displayLabel+"LS") in partyByYear) return displayLabel+"LS";
+  return null;
+}
 function wm_buildTray(){
   partyTrayEl.innerHTML="";
   for(const p of PARTY_SET_ALL){
@@ -330,10 +335,7 @@ function wm_buildForTarget(){
   const nm = seat.properties.__name;
   const yearMap = seat.properties.__partyByYear || {};
 
-  const labels = seat.properties.__state==="Andhra Pradesh" ? YEARS_AC_AP.slice()
-                : seat.properties.__state==="Telangana"      ? YEARS_AC_TS.slice()
-                : YEARS_PC_ALL.slice();
-
+  const labels = winnersAllowedLabelsForSeat(seat);
   wm_currentSlots = [];
   wm_yearKeyByLabel={};
   wm_attemptsByLabel={}; wm_lockedByLabel={}; wm_solvedYears=0;
@@ -421,14 +423,14 @@ function wm_revealYear(label, slot){
   statusEl.textContent=`Revealed ${label}: ${correct.toUpperCase()}.`;
   round+=1;
 }
-const wm_allYearsLocked=()=> wm_currentSlots.every(s => !s.have || wm_lockedByLabel[s.label]);
+function wm_allYearsLocked(){ return wm_currentSlots.every(s => !s.have || wm_lockedByLabel[s.label]); }
 function wm_maybeSeatComplete(){
   if(!wm_allYearsLocked()) return;
   wm_completedSeatNames.add(target.properties.__name);
   wm_seatsCompleted=wm_completedSeatNames.size;
   statusEl.textContent=`Seat complete! ${wm_seatsCompleted}/${pool.length} seats done.`;
 }
-const wm_revealAll=()=>{
+function wm_revealAll(){
   if(!target) return;
   for(const s of wm_currentSlots){
     if(!s.have) continue;
@@ -438,9 +440,9 @@ const wm_revealAll=()=>{
     }
   }
   wm_maybeSeatComplete();
-};
+}
 
-/* ---------------- Loaders ---------------- */
+// ---------- Loaders ----------
 function normalizeFeatures(fc,nameKeys){
   const out=[];
   for(const f of (fc.features||[])){
@@ -451,6 +453,16 @@ function normalizeFeatures(fc,nameKeys){
   }
   return out;
 }
+function parseDistricts(raw){
+  if(raw==null) return [];
+  const s = String(raw)
+    .replace(/\[|\]|\(|\)/g," ")
+    .replace(/&/g,",")
+    .replace(/\/|;|\|/g,",");
+  const parts = s.split(",").map(x => normalizeLabel(x)).filter(Boolean);
+  return [...new Set(parts)];
+}
+
 async function ensure(key){
   if(loaded[key]) return true;
   try{
@@ -463,17 +475,18 @@ async function ensure(key){
     } else if(key==="HIGHWAY"){
       feats = normalizeFeatures(fc, KEYS.HIGHWAY);
     } else if (key === "AC") {
-      // AC has exactly one district; accept many possible field names
+      // AC uses single DISTRICT field
       feats = fc.features.map(f => {
         const nm  = normalizeLabel(getProp(f.properties, KEYS.AC));
         if (!nm) return null;
         const st  = normalizeState(getProp(f.properties, KEYS.STATE));
         const d   = normalizeLabel(
-          getProp(f.properties, KEYS.DISTRICT) // <-- big list
-          ?? getProp(f.properties, KEYS.REGION)
-          ?? ""
+          getProp(f.properties, KEYS.DIST) ?? getProp(f.properties, KEYS.REGION) ?? ""
         );
-        return { ...f, properties: { ...f.properties, __name:nm, __state:st, __district:d } };
+        return {
+          ...f,
+          properties: { ...f.properties, __name: nm, __state: st, __district: d }
+        };
       }).filter(Boolean);
     } else if (key === "PC") {
       // PCs can span multiple districts -> keep array
@@ -481,21 +494,21 @@ async function ensure(key){
         const nm  = normalizeLabel(getProp(f.properties, KEYS.PC));
         if (!nm) return null;
         const st  = normalizeState(getProp(f.properties, KEYS.STATE));
-        const raw = getProp(f.properties, KEYS.DISTS)
-                 ?? getProp(f.properties, KEYS.DISTRICT)
+        const raw = getProp(f.properties, KEYS.DIST)
                  ?? getProp(f.properties, KEYS.REGION)
                  ?? "";
         const dArr = parseDistricts(raw);
         const dMain = dArr[0] || "";
-        return { ...f, properties:{ ...f.properties, __name:nm, __state:st, __district:dMain, __districts:dArr } };
+        return {
+          ...f,
+          properties: { ...f.properties, __name: nm, __state: st, __district: dMain, __districts: dArr }
+        };
       }).filter(Boolean);
     } else if(key==="CITY"){
       feats = fc.features.map(f=>{
         const nm=normalizeLabel(getProp(f.properties, KEYS.CITYNAME));
         const st=normalizeState(getProp(f.properties, KEYS.STATE));
-        const dist=normalizeLabel(
-          getProp(f.properties, KEYS.DISTRICT) ?? ""
-        );
+        const dist=normalizeLabel(getProp(f.properties, KEYS.DIST)||"");
         return {...f, properties:{...f.properties,__name:nm,__state:st,__district:dist}};
       }).filter(f=>!!f.properties.__name);
     } else if(key==="PEAK"){
@@ -512,9 +525,7 @@ async function ensure(key){
         const seatKeys = key==="WIN_AC" ? KEYS.AC : KEYS.PC;
         const nm=normalizeLabel(getProp(f.properties, seatKeys));
         const st=normalizeState(getProp(f.properties, KEYS.STATE));
-        const region=normalizeLabel(
-          getProp(f.properties, KEYS.DISTRICT) ?? getProp(f.properties, KEYS.REGION) ?? ""
-        );
+        const region=normalizeLabel(getProp(f.properties, KEYS.REGION) || getProp(f.properties, KEYS.DIST) || "");
         const partyByYear={};
         for(const yf of YEAR_FIELDS){
           const val=getProp(f.properties, yf);
@@ -531,50 +542,41 @@ async function ensure(key){
   }
 }
 
-/* ---------------- Pools / tallies ---------------- */
+// ---------- Pools / tallies ----------
 function rebuildPool(){
   const feats = all[game] || [];
 
-  // main filter: state + district (dropdown)
-  pool = feats.filter(f=>{
-    const st = f.properties.__state;
-    if (mode === "AP" && !(st === "Andhra Pradesh" || st === "Unknown")) return false;
-    if (mode === "TS" && !(st === "Telangana"      || st === "Unknown")) return false;
-
-    if (districtFilter !== "ALL") {
-      const want = normalizeLabel(districtFilter);
-      if (game === "AC") {
-        const d = normalizeLabel(f.properties.__district || "");
-        if (d !== want) return false;
-      } else if (game === "PC" || game === "WIN_PC" || game === "WIN_AC") {
-        const arr = (f.properties.__districts && f.properties.__districts.length)
-          ? f.properties.__districts
-          : [normalizeLabel(f.properties.__district || "")];
-        if (!arr.map(normalizeLabel).includes(want)) return false;
-      }
-    }
+  // 1) State filter
+  const stateFiltered = feats.filter(f=>{
+    const st=f.properties.__state;
+    if (mode==="AP" && !(st==="Andhra Pradesh" || st==="Unknown")) return false;
+    if (mode==="TS" && !(st==="Telangana"      || st==="Unknown")) return false;
     return true;
   });
 
+  // 2) District filter (only AC/PC/WIN_*)
+  const needsDistrict = ["AC","PC","WIN_AC","WIN_PC"].includes(game) && districtFilter !== "ALL";
+  const districtFiltered = needsDistrict
+    ? stateFiltered.filter(f=>{
+        if (game==="AC") {
+          const d = normalizeLabel(f.properties.__district || "");
+          return d === districtFilter;
+        } else {
+          const arr = (f.properties.__districts && f.properties.__districts.length)
+            ? f.properties.__districts
+            : [normalizeLabel(f.properties.__district || "")].filter(Boolean);
+          return arr.map(normalizeLabel).includes(districtFilter);
+        }
+      })
+    : stateFiltered;
+
+  pool = districtFiltered;
+
   if(countEl) countEl.textContent = pool.length;
 
-  // state tallies (for right HUD)
-  stateTotals = { ap:0, ts:0 };
-  stateSolved = { ap:0, ts:0 };
-  if (game === "DISTRICT" || game === "AC" || game === "PC") {
-    for (const f of pool){
-      const bucket = f.properties.__state === "Andhra Pradesh" ? "ap"
-                    : f.properties.__state === "Telangana"      ? "ts" : null;
-      if (!bucket) continue;
-      stateTotals[bucket] += 1;
-      if (isCorrectTag(selection[f.properties.__name])) stateSolved[bucket] += 1;
-    }
-  }
-
-  // city bookkeeping
+  // CITY tallies
   if(game==="CITY"){
-    totalPop=0; catTotals={mega:0,large:0,med:0,small:0};
-    cityByDistrict.clear(); districtFullSolved.clear();
+    totalPop=0; catTotals={mega:0,large:0,med:0,small:0}; cityByDistrict.clear(); districtFullSolved.clear();
     for(const f of pool){
       const pop=cityPop(f.properties); totalPop+=pop; catTotals[cityCat(pop)]++;
       const d=f.properties.__district||"";
@@ -583,12 +585,12 @@ function rebuildPool(){
     recalcCityProgress();
   }
 
-  // AC/PC district coverage tallies
+  // AC/PC per-district progress tallies
   if (game === "AC" || game === "PC") {
     acpcDistrictTotals.clear();
     acpcDistrictSolved.clear();
 
-    for (const f of pool){
+    for (const f of pool) {
       const solved = isCorrectTag(selection[f.properties.__name]);
       const arr = (game === "AC")
         ? [normalizeLabel(f.properties.__district || "")].filter(Boolean)
@@ -596,8 +598,9 @@ function rebuildPool(){
             ? f.properties.__districts
             : [normalizeLabel(f.properties.__district || "")].filter(Boolean);
 
-      arr.forEach(d=>{
-        const dn = normalizeLabel(d); if (!dn) return;
+      arr.forEach(d => {
+        const dn = normalizeLabel(d);
+        if (!dn) return;
         acpcDistrictTotals.set(dn, (acpcDistrictTotals.get(dn) || 0) + 1);
         if (solved) acpcDistrictSolved.set(dn, (acpcDistrictSolved.get(dn) || 0) + 1);
       });
@@ -606,19 +609,28 @@ function rebuildPool(){
     acpcDistrictAll = acpcDistrictTotals.size;
     acpcDistrictCovered = 0;
     acpcDistrictFull = 0;
-    for (const [d,total] of acpcDistrictTotals.entries()){
+    for (const [d, total] of acpcDistrictTotals.entries()) {
       const s = acpcDistrictSolved.get(d) || 0;
       if (s > 0) acpcDistrictCovered++;
       if (s === total) acpcDistrictFull++;
     }
   }
 
-  // Winners seat progress guard
-  if (game === "WIN_AC" || game === "WIN_PC"){
-    wm_completedSeatNames = new Set(
-      [...wm_completedSeatNames].filter(n => pool.some(f=>f.properties.__name===n))
-    );
+  // Winners seat progress pruning
+  if(game==="WIN_AC"||game==="WIN_PC"){
+    wm_completedSeatNames = new Set([...wm_completedSeatNames].filter(n => pool.some(f=>f.properties.__name===n)));
     wm_seatsCompleted = wm_completedSeatNames.size;
+  }
+
+  // State totals/solved for HUD
+  stateTotals = { ap:0, ts:0 };
+  stateSolved = { ap:0, ts:0 };
+  for (const f of pool){
+    const st=f.properties.__state;
+    const key = (st==="Andhra Pradesh") ? "ap" : (st==="Telangana") ? "ts" : null;
+    if(!key) continue;
+    stateTotals[key]++;
+    if(isCorrectTag(selection[f.properties.__name])) stateSolved[key]++;
   }
 
   rebuildDistrictFilterOptions();
@@ -639,10 +651,36 @@ function recalcCityProgress(){
     if(list.some(n=>solvedCities.has(n))) districtCoveredAny.add(d);
   }
 }
-const remainingNames=()=> pool.map(f=>f.properties.__name).filter(n=>!isCorrectTag(selection[n]));
-const oldDistrictDenom=()=> (mode==="AP"?13 : mode==="TS"?10 : 23);
+function remainingNames(){ return pool.map(f=>f.properties.__name).filter(n=>!isCorrectTag(selection[n])); }
+function oldDistrictDenom(){ if(mode==="AP") return 13; if(mode==="TS") return 10; return 23; }
 
-/* ---------------- Layers ---------------- */
+// ---------- Target ----------
+function pickNewTarget(){
+  districtAttemptCount=0; mustConfirmClickName=null;
+  riverAttemptCount=0; highwayAttemptCount=0; acAttemptCount=0; pcAttemptCount=0;
+
+  if(game==="WIN_AC"||game==="WIN_PC"){
+    const remain = pool.map(f=>f.properties.__name).filter(n=>!wm_completedSeatNames.has(n));
+    if(!remain.length){ endGame(); return; }
+    const nm = remain[Math.floor(Math.random()*remain.length)];
+    target = pool.find(f=>f.properties.__name===nm) || null;
+    wm_buildForTarget();
+    return;
+  }
+
+  if((game==="CITY"||game==="AC"||game==="PC") && playStyle==="TYPE"){
+    target=null;
+    targetEl.textContent=`(${remainingNames().length}/${pool.length} remaining)`;
+    return;
+  }
+  const remain=remainingNames();
+  if(!remain.length){ endGame(); return; }
+  const nm = remain[Math.floor(Math.random()*remain.length)];
+  target = pool.find(f=>f.properties.__name===nm)||null;
+  targetEl.textContent = target ? target.properties.__name : "—";
+}
+
+// ---------- Layers ----------
 const cityRenderer = L.svg({ padding: 0.5 });
 
 function cityStyle(cat,glow=false){
@@ -660,8 +698,8 @@ function cityStyle(cat,glow=false){
 
 const IN_LON_MIN = 65, IN_LON_MAX = 98;
 const IN_LAT_MIN = 5,  IN_LAT_MAX = 37;
-const looksLon=(x)=> x>=IN_LON_MIN && x<=IN_LON_MAX;
-const looksLat=(x)=> x>=IN_LAT_MIN && x<=IN_LAT_MAX;
+function looksLon(x){ return x>=IN_LON_MIN && x<=IN_LON_MAX; }
+function looksLat(x){ return x>=IN_LAT_MIN && x<=IN_LAT_MAX; }
 function toLatLngAutodetect(a,b){
   if(looksLon(a)&&looksLat(b)) return L.latLng(b,a);
   if(looksLon(b)&&looksLat(a)) return L.latLng(a,b);
@@ -692,22 +730,36 @@ function styleForFeature(f){
   const type = f.geometry?.type || "";
   const isLine = /LineString/i.test(type);
 
+  // Points (CITY/PEAK handled elsewhere)
   if (game === "CITY" || game === "PEAK") return {};
 
-  // neutral
-  let color = "#64748b", weight = 1.2, fillColor, fillOpacity = 0;
+  // --- Base stroke/fill (neutral) ---
+  let color = "#64748b";
+  let weight = 1.2;
+  let fillColor = undefined;
+  let fillOpacity = 0;
 
-  if (game === "RIVER") { color = css("--river-stroke", "#64748b"); weight = 4; }
-  else if (game === "HIGHWAY") { color = css("--hwy-stroke", "#475569"); weight = 3; }
-  else if (game === "AC" || game === "PC" || game === "WIN_AC" || game === "WIN_PC") {
-    color = "#64748b"; weight = 1.2; fillOpacity = 0;
+  if (game === "RIVER") {
+    color = css("--river-stroke", "#64748b");
+    weight = 4;
+    fillOpacity = 0;
+  } else if (game === "HIGHWAY") {
+    color = css("--hwy-stroke", "#475569");
+    weight = 3;
+    fillOpacity = 0;
+  } else if (game === "AC" || game === "PC" || game === "WIN_AC" || game === "WIN_PC") {
+    color = "#64748b";
+    weight = 1.2;
+    fillOpacity = 0;
   } else {
     const ap = (f.properties.__state === "Andhra Pradesh");
     color     = ap ? css("--ap-stroke", "#3b82f6") : css("--ts-stroke", "#a855f7");
     fillColor = ap ? css("--ap-fill",   "#93c5fd") : css("--ts-fill",   "#d8b4fe");
-    weight = 2; fillOpacity = isLine ? 0 : 0.45;
+    weight = 2;
+    fillOpacity = isLine ? 0 : 0.45;
   }
 
+  // --- Guess/reveal overrides ---
   if (isCorrectTag(sel)) {
     const first  = sel === "correct" || sel === "correct1";
     const second = sel === "correct2";
@@ -717,18 +769,29 @@ function styleForFeature(f){
     const fill   = first ? css("--ok-fill",  "#86efac")
                : second ? css("--ok2-fill", "#b7e7c8")
                         : css("--ok3-fill", "#d6f2e0");
-    color = stroke; fillColor = fill; weight = isLine ? 6 : 3; fillOpacity = isLine ? 0 : 0.75;
+
+    color = stroke;
+    fillColor = fill;
+    weight = isLine ? 6 : 3;
+    fillOpacity = isLine ? 0 : 0.75;
     return isLine ? { color, weight } : { color, weight, fillColor, fillOpacity };
   }
+
   if (sel === "wrong") {
-    color = css("--bad-stroke", "#ef4444"); fillColor = css("--bad-fill", "#fca5a5");
-    weight = isLine ? 6 : 3; fillOpacity = isLine ? 0 : 0.7;
+    color = css("--bad-stroke", "#ef4444");
+    fillColor = css("--bad-fill", "#fca5a5");
+    weight = isLine ? 6 : 3;
+    fillOpacity = isLine ? 0 : 0.7;
     return isLine ? { color, weight } : { color, weight, fillColor, fillOpacity };
   }
+
   if (sel === "reveal") {
-    const rStroke="#f59e0b", rFill="#fde68a";
-    return isLine ? { color:rStroke, weight:6 } : { color:rStroke, weight:3, fillColor:rFill, fillOpacity:0.8 };
+    const rStroke = "#f59e0b", rFill = "#fde68a";
+    return isLine ? { color: rStroke, weight: 6 }
+                  : { color: rStroke, weight: 3, fillColor: rFill, fillOpacity: 0.8 };
   }
+
+  // Default (neutral)
   return isLine ? { color, weight } : { color, weight, fillColor, fillOpacity };
 }
 
@@ -739,13 +802,16 @@ function bindCityLabel(layer, name){
 }
 
 function rebuildLayer(fit=true){
+  // city-mode class only for CITY game
   map.getContainer().classList.toggle("city-mode", game==="CITY");
+
   if(nonCityLayer){ nonCityLayer.remove(); nonCityLayer=null; }
   wm_clearSeatLayer();
 
   if(game==="CITY"){
     if(!cityFG){ cityFG = L.featureGroup([]).addTo(map); }
     cityFG.clearLayers();
+
     const visible = (playStyle==="TYPE")
       ? pool.filter(f => isCorrectTag(selection[f.properties.__name]))
       : pool;
@@ -779,7 +845,8 @@ function rebuildLayer(fit=true){
       },
       onEachFeature:(f,layer)=> layer.on({click:onFeatureClick})
     }).addTo(map);
-  } else {
+  }
+  else {
     nonCityLayer = L.geoJSON({type:"FeatureCollection",features:pool},{
       style:styleForFeature,
       onEachFeature:(f,layer)=> layer.on({click:onFeatureClick})
@@ -810,7 +877,7 @@ function redrawStyles(){
   nonCityLayer?.setStyle?.(styleForFeature);
 }
 
-/* ---------------- District filter UI ---------------- */
+// ---------- District filter UI ----------
 function ensureDistrictFilterUI(){
   if(districtSection && districtSelect) return;
   const anchor = $("#modeControls")?.closest("section") || $("#modeControls");
@@ -839,7 +906,7 @@ function rebuildDistrictFilterOptions(){
   ensureDistrictFilterUI();
   const show = ["AC","PC","WIN_AC","WIN_PC"].includes(game);
   districtSection?.classList.toggle("hidden", !show);
-  if (!show) return;
+  if(!show) return;
 
   const districts = new Set();
 
@@ -851,29 +918,22 @@ function rebuildDistrictFilterOptions(){
     if (game === "AC") {
       const d = normalizeLabel(f.properties.__district || "");
       if (d) districts.add(d);
-    } else { // PC or Winners: may have multiple
+    } else {
       const arr = (f.properties.__districts && f.properties.__districts.length)
         ? f.properties.__districts
         : [normalizeLabel(f.properties.__district || "")];
-      arr.forEach(d => { if (d) districts.add(normalizeLabel(d)); });
+      arr.forEach(d => { const dn=normalizeLabel(d); if(dn) districts.add(dn); });
     }
   }
 
-  const opts = [`<option value="ALL">All districts</option>`]
-    .concat([...districts].sort((a,b)=>a.localeCompare(b)).map(d=>`<option value="${d}">${d}</option>`))
-    .join("");
+  const list = ["ALL", ...Array.from(districts).sort((a,b)=>a.localeCompare(b))];
 
-  districtSelect.innerHTML = opts;
-
-  if ([...districts].includes(districtFilter)) {
-    districtSelect.value = districtFilter;
-  } else {
-    districtSelect.value = "ALL";
-    districtFilter = "ALL";
-  }
+  const prev = districtSelect.value || "ALL";
+  districtSelect.innerHTML = list.map(d => `<option value="${d}">${d}</option>`).join("");
+  districtSelect.value = list.includes(prev) ? prev : "ALL";
 }
 
-/* ---------------- Interaction ---------------- */
+// ---------- Interaction ----------
 function onFeatureClick(e){
   const f=e.target.feature;
 
@@ -885,6 +945,8 @@ function onFeatureClick(e){
   }
 
   if(isGameOver) return;
+
+  // block clicks only in TYPE mode
   if( (playStyle==="TYPE") && (game==="CITY" || game==="AC" || game==="PC") ) return;
 
   const nm=f.properties.__name;
@@ -973,10 +1035,11 @@ function onFeatureClick(e){
     } else {
       selection[nm] = "wrong"; statusEl.textContent = "Try again…"; redrawStyles();
     }
+    return;
   }
 }
 
-/* ---------------- Visibility / labels ---------------- */
+// ---------- UI / Visibility ----------
 function ensureRevealNextButtons(){
   if(revealBtn) return;
   const controls = skipBtn?.parentElement;
@@ -1031,7 +1094,7 @@ function applyVisibility(){
   }
 }
 
-/* ---------------- Right HUD ---------------- */
+// ---------- HUD ----------
 function districtBreakdownHTML(){
   const rows=[];
   const entries=[...cityByDistrict.entries()].sort((a,b)=>{
@@ -1071,20 +1134,6 @@ function populationBreakdownHTML(){
     `;
   }).join("");
 }
-function acpcDistrictBreakdownHTML(){
-  const rows = [...acpcDistrictTotals.entries()]
-    .sort((a,b)=>{
-      const as=acpcDistrictSolved.get(a[0])||0, bs=acpcDistrictSolved.get(b[0])||0;
-      if(bs!==as) return bs-as;
-      return a[0].localeCompare(b[0]);
-    })
-    .map(([d,tot])=>{
-      const s=acpcDistrictSolved.get(d)||0;
-      return `<div class="row"><span>${d}</span><strong>${s}/${tot}</strong></div>`;
-    });
-  if(!rows.length) return `<div class="small muted" style="margin-top:6px">No districts in current filter.</div>`;
-  return rows.join("");
-}
 
 function renderRightHUD(){
   if(!rightHud) return;
@@ -1093,7 +1142,7 @@ function renderRightHUD(){
     const pct = totalPop>0 ? Math.round((coveredPop/totalPop)*1000)/10 : 0;
     const citiesSolved = solvedCities.size;
     const citiesTotal  = pool.length;
-    const oldDistCovered = districtCoveredAny.size;
+    const oldDistCovered = districtFullSolved.size;
     const oldDistTotal   = oldDistrictDenom();
 
     rightHud.innerHTML = `
@@ -1119,30 +1168,16 @@ function renderRightHUD(){
           <div style="margin-top:8px">${districtBreakdownHTML()}</div>
         </details>
       </div>`;
-    safeInvalidate(); 
-    return;
+    safeInvalidate(); return;
   }
 
-  if (game==="DISTRICT" || game==="AC" || game==="PC"){
+  if (game==="DISTRICT"||game==="AC"||game==="PC"){
     const totSolved = stateSolved.ap + stateSolved.ts; const tot = stateTotals.ap + stateTotals.ts;
-
-    const extra = (game !== "DISTRICT")
-      ? `
-        <div class="row"><span>Districts covered</span><strong>${acpcDistrictCovered}/${acpcDistrictAll}</strong></div>
-        <div class="row"><span>Fully solved districts</span><strong>${acpcDistrictFull}/${acpcDistrictAll}</strong></div>
-        <details style="margin-top:8px">
-          <summary class="small" style="cursor:pointer;color:#0f172a">By district (expand)</summary>
-          <div style="margin-top:8px">${acpcDistrictBreakdownHTML()}</div>
-        </details>
-      `
-      : "";
-
     rightHud.innerHTML = `
       <div class="hud-card"><div class="hud-title">${game==="DISTRICT"?"Districts":game}</div>
         <div class="row"><span>AP</span><strong>${stateSolved.ap}/${stateTotals.ap}</strong></div>
         <div class="row"><span>TS</span><strong>${stateSolved.ts}/${stateTotals.ts}</strong></div>
         <div class="row"><span>Total</span><strong>${totSolved}/${tot}</strong></div>
-        ${extra}
       </div>`;
     return;
   }
@@ -1166,10 +1201,14 @@ function renderRightHUD(){
         ${rows ? `<div style="margin-top:8px">${rows}</div>` : ""}
       </div>
     `;
+    return;
   }
+
+  rightHud.innerHTML = "";
+  safeInvalidate();
 }
 
-/* ---------------- Labels / context ---------------- */
+// ---------- Labels / context ----------
 async function addDistrictContext(){
   try{
     const fc=await loadGeoJSON(PATHS.DISTRICT);
@@ -1199,7 +1238,7 @@ function refreshDistrictContextForMode(){
   ).addTo(map);
 }
 
-/* ---------------- End-of-game labels ---------------- */
+// ---------- End-of-game labels ----------
 function clearFinishLabels(){
   if(finishLabelsLayer){ map.removeLayer(finishLabelsLayer); finishLabelsLayer=null; }
 }
@@ -1210,7 +1249,8 @@ function addFinishLabels(){
   finishLabelsLayer = L.layerGroup().addTo(map);
   const layers = group.getLayers ? group.getLayers() : [];
   layers.forEach(layer=>{
-    const f = layer.feature; if(!f) return;
+    const f = layer.feature;
+    if(!f) return;
     const name = f.properties?.__name || "";
     if(!name) return;
     let at;
@@ -1221,32 +1261,7 @@ function addFinishLabels(){
   });
 }
 
-/* ---------------- Target & lifecycle ---------------- */
-function pickNewTarget(){
-  districtAttemptCount=0; mustConfirmClickName=null;
-  riverAttemptCount=0; highwayAttemptCount=0; acAttemptCount=0; pcAttemptCount=0;
-
-  if(game==="WIN_AC"||game==="WIN_PC"){
-    const remain = pool.map(f=>f.properties.__name).filter(n=>!wm_completedSeatNames.has(n));
-    if(!remain.length){ endGame(); return; }
-    const nm = remain[Math.floor(Math.random()*remain.length)];
-    target = pool.find(f=>f.properties.__name===nm) || null;
-    wm_buildForTarget();
-    return;
-  }
-
-  if((game==="CITY"||game==="AC"||game==="PC") && playStyle==="TYPE"){
-    target=null;
-    targetEl.textContent=`(${remainingNames().length}/${pool.length} remaining)`;
-    return;
-  }
-  const remain=remainingNames();
-  if(!remain.length){ endGame(); return; }
-  const nm = remain[Math.floor(Math.random()*remain.length)];
-  target = pool.find(f=>f.properties.__name===nm)||null;
-  targetEl.textContent = target ? target.properties.__name : "—";
-}
-
+// ---------- Round lifecycle ----------
 function clearGame(){
   selection={}; solvedCities.clear(); score=0; round=1; isGameOver=false; statusEl.textContent="";
   districtAttemptCount=0; mustConfirmClickName=null;
@@ -1260,6 +1275,7 @@ function clearGame(){
 }
 function startRound(){
   rebuildPool();
+  refreshDistrictContextForMode(); // ensure context toggles with game
   rebuildLayer(true);
   updateLabels();
   applyVisibility();
@@ -1296,7 +1312,7 @@ function updateHUD(){
   if (roundEl) roundEl.textContent = String(round);
 }
 
-/* ---------------- Controls ---------------- */
+// ---------- Controls ----------
 modeBtns.forEach(btn=>btn.addEventListener("click",()=>{
   modeBtns.forEach(b=>b.classList.remove("active"));
   btn.classList.add("active");
@@ -1361,6 +1377,7 @@ typeSubmit?.addEventListener("click", ()=>{
     statusEl.textContent = "Not a correct answer — check spelling.";
     if(game==="AC") acTypeWrongsSinceLastCorrect += 1;
     if(game==="PC") pcTypeWrongsSinceLastCorrect += 1;
+    return;
   }
 });
 typeInput?.addEventListener("keydown",(e)=>{ if(e.key==="Enter"){ e.preventDefault(); typeSubmit?.click(); } });
@@ -1384,20 +1401,21 @@ restartBtn?.addEventListener("click",()=>{
   startRound();
 });
 
-/* ---------------- Timer ---------------- */
+// ---------- Timer ----------
 let timerHandle=null;
-const clearTimer=()=>{ if(timerHandle) clearInterval(timerHandle); timerHandle=null; };
+function clearTimer(){ if(timerHandle) clearInterval(timerHandle); timerHandle=null; }
 function startTimer(){
   clearTimer(); timer=0;
   if(timeEl) timeEl.textContent=`${timer}s`;
   timerHandle=setInterval(()=>{ timer++; if(timeEl) timeEl.textContent=`${timer}s`; },1000);
 }
-
-/* ---------------- District splash ---------------- */
 const LS_KEY_SPLASH_HIDE = "apts_district_disclaimer_hide";
+
 function showDistrictSplash(startCallback){
   if(!splashEl) { startCallback?.(); return; }
   splashEl.classList.remove("hidden");
+
+  // trap focus basic: focus button
   setTimeout(()=>{ try{ splashOkBtn?.focus(); }catch{} }, 0);
 
   function finish(){
@@ -1407,13 +1425,15 @@ function showDistrictSplash(startCallback){
     startCallback?.();
   }
   splashOkBtn?.addEventListener("click", finish, { once:true });
+
+  // allow Enter/Escape
   function onKey(e){
     if(e.key === "Enter" || e.key === "Escape"){ e.preventDefault(); finish(); }
   }
   document.addEventListener("keydown", onKey, { once:true });
 }
 
-/* ---------------- Init ---------------- */
+// ---------- Init ----------
 (async function init(){
   await addDistrictContext();
   await ensure(game);
@@ -1426,10 +1446,15 @@ function showDistrictSplash(startCallback){
     requestAnimationFrame(()=> map.invalidateSize());
   };
 
+  // Show disclaimer only for DISTRICT and only if not hidden
   let shouldShow = (game === "DISTRICT");
   try { shouldShow = shouldShow && !localStorage.getItem(LS_KEY_SPLASH_HIDE); } catch {}
 
-  if(shouldShow){ showDistrictSplash(start); } else { start(); }
+  if(shouldShow){
+    showDistrictSplash(start);
+  }else{
+    start();
+  }
 
   window.addEventListener("load", ()=> map.invalidateSize());
 })();
