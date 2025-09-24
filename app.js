@@ -7,7 +7,7 @@
    - Filters: by State (AP/TS/BOTH) and by District (AC only)
    - AC HUD: Districts fully covered counter X/23 + per-district dropdown
    ========================================================== */
-console.log("APP JS LOADED v-stable-2025-09-20+wm-district+acfilter+counter");
+console.log("APP JS LOADED v-stable-2025-09-20+wm-district+acfilter-only");
 
 /* -------------------- URL params -------------------- */
 const urlParams = new URLSearchParams(location.search);
@@ -27,7 +27,12 @@ const PATHS = {
 
 /* -------------------- Field keys -------------------- */
 const KEYS = {
-  DISTRICT: ["DISTRICT","district","NAME_2","DIST_NAME","DISTNAME","dt_name","district_name"],
+  // Single, robust key list (no duplicates)
+  DISTRICT: [
+    "DISTRICT","District","district",
+    "NAME_2","DIST_NAME","DISTNAME","Dist_Name","DistName",
+    "dt_name","DT_NAME","district_name","DIST_NM","DISTCODE","DIST_CODE"
+  ],
   AC:       ["AC","AC_NAME","acname","ACNAME","Constituency","constituency","assembly","NAME","Name"],
   PC:       ["PC","PC_NAME","pcname","PCNAME","Parliament","parliament","NAME","Name"],
   RIVER:    ["rivname","RIVER","RIVER_NAME","NAME","NAME_EN","R_NAME","river"],
@@ -35,7 +40,6 @@ const KEYS = {
   CITYNAME: ["Name","NAME","City","CITY","City_Name","CITY_NAME","Town","TOWN"],
   CITYPOP:  ["2011 population","2011 Population","Population 2011","Population (2011)","2011_population","Population_2011","POP_2011","POP2011","2011pop","pop2011","Population","population","POP","Pop","TOT_P","TOT_POP","TOTAL_POP","Total_Pop"],
   STATE:    ["STATE","State","state","state_name","st_name","STATE_NM","STNAME","st","statecode","STATECODE"],
-  DISTRICT: ["DISTRICT","District","district"],
   REGION:   ["REGION","Region","region"],
   PEAKNAME: ["Name","NAME","Peak","PEAK"],
   PEAKNOTES:["Notes","NOTES","note","NOTE","Desc","DESC"],
@@ -286,7 +290,7 @@ function winnersAllowedLabelsForSeat(seat){
   if(game==="WIN_PC") return YEARS_PC_ALL.slice();
   return st==="Andhra Pradesh" ? YEARS_AC_AP.slice()
        : st==="Telangana"      ? YEARS_AC_TS.slice()
-       : [...new Set([...YEARS_AC_AP, ...YEARS_AC_TS])];
+       : [...new Set([...YEARS_AC_AP, ...YEERS_AC_TS])];
 }
 function resolveYearKey(partyByYear, displayLabel){
   if(displayLabel in partyByYear) return displayLabel;
@@ -479,13 +483,15 @@ async function ensure(key){
     } else if(key==="HIGHWAY"){
       feats = normalizeFeatures(fc, KEYS.HIGHWAY);
     } else if (key === "AC") {
+      // *** AC: read district directly from DISTRICT field (with graceful fallback) ***
       feats = fc.features.map(f => {
         const nm  = normalizeLabel(getProp(f.properties, KEYS.AC));
         if (!nm) return null;
         const st  = normalizeState(getProp(f.properties, KEYS.STATE));
-         const d   = normalizeLabel(
-   getProp(f.properties, KEYS.DISTRICT) ?? getProp(f.properties, KEYS.REGION) ?? ""
-			);
+        const dRaw = (f.properties && f.properties.DISTRICT != null)
+          ? f.properties.DISTRICT
+          : (getProp(f.properties, KEYS.DISTRICT) ?? getProp(f.properties, KEYS.REGION) ?? "");
+        const d = normalizeLabel(dRaw);
         return {
           ...f,
           properties: { ...f.properties, __name: nm, __state: st, __district: d }
@@ -497,8 +503,8 @@ async function ensure(key){
         if (!nm) return null;
         const st  = normalizeState(getProp(f.properties, KEYS.STATE));
         const raw = getProp(f.properties, KEYS.DISTRICT)
-         ?? getProp(f.properties, KEYS.REGION)
-           ?? "";
+                 ?? getProp(f.properties, KEYS.REGION)
+                 ?? "";
         const dArr = parseDistricts(raw);
         const dMain = dArr[0] || "";
         return {
@@ -568,7 +574,6 @@ function rebuildPool(){
   pool = districtFiltered;
 
   if(countEl){
-    // keep fresh; AC counter set later with fully covered count
     if (game !== "AC") countEl.textContent = String(pool.length);
   }
 
@@ -610,7 +615,6 @@ function rebuildPool(){
     acpcDistrictAll = acpcDistrictCovered = acpcDistrictFull = 0;
   }
 
-  // Winners seat progress pruning
   if(game==="WIN_AC"||game==="WIN_PC"){
     wm_completedSeatNames = new Set([...wm_completedSeatNames].filter(n => pool.some(f=>f.properties.__name===n)));
     wm_seatsCompleted = wm_completedSeatNames.size;
@@ -629,7 +633,6 @@ function rebuildPool(){
 
   rebuildDistrictFilterOptions();
 
-  // keep right-top counter consistent when AC: fully covered districts / 23
   if (game === "AC" && countEl) {
     const covList = acDistrictCoverageList();
     const fullyCovered = covList.filter(x=>x.full).length;
@@ -898,7 +901,7 @@ function ensureDistrictFilterUI(){
   anchor?.insertAdjacentElement("afterend", districtSection);
   districtSelect = districtSection.querySelector("#districtSelect");
   districtSelect.addEventListener("change", ()=>{
-    districtFilter = districtSelect.value || "ALL";
+    districtFilter = normalizeLabel(districtSelect.value || "ALL");
     selection={}; score=0; round=1; isGameOver=false;
     wm_completedSeatNames.clear(); wm_seatsCompleted=0;
     rebuildPool();
@@ -1179,12 +1182,10 @@ function renderRightHUD(){
 
   if (game==="DISTRICT" || game==="AC" || game==="PC"){
     if (game === "AC") {
-      // Update right-top counter: fully covered districts / 23
       const covList = acDistrictCoverageList();
       const fullyCovered = covList.filter(x => x.full).length;
       if (countEl) countEl.textContent = `${fullyCovered}/${TOTAL_DISTRICTS}`;
 
-      // Build coverage dropdown: "Hyderabad — 0/15"
       const opts = covList.length
         ? `<select class="input" style="width:100%">
              ${covList.map(x=>`<option>${x.name} — ${x.solved}/${x.total}</option>`).join("")}
