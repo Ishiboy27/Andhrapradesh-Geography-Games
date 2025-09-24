@@ -483,9 +483,9 @@ async function ensure(key){
         const nm  = normalizeLabel(getProp(f.properties, KEYS.AC));
         if (!nm) return null;
         const st  = normalizeState(getProp(f.properties, KEYS.STATE));
-        const d   = normalizeLabel(
-          getProp(f.properties, KEYS.DIST) ?? getProp(f.properties, KEYS.REGION) ?? ""
-        );
+         const d   = normalizeLabel(
+   getProp(f.properties, KEYS.DISTRICT) ?? getProp(f.properties, KEYS.REGION) ?? ""
+			);
         return {
           ...f,
           properties: { ...f.properties, __name: nm, __state: st, __district: d }
@@ -496,9 +496,9 @@ async function ensure(key){
         const nm  = normalizeLabel(getProp(f.properties, KEYS.PC));
         if (!nm) return null;
         const st  = normalizeState(getProp(f.properties, KEYS.STATE));
-        const raw = getProp(f.properties, KEYS.DIST)
-                 ?? getProp(f.properties, KEYS.REGION)
-                 ?? "";
+        const raw = getProp(f.properties, KEYS.DISTRICT)
+         ?? getProp(f.properties, KEYS.REGION)
+           ?? "";
         const dArr = parseDistricts(raw);
         const dMain = dArr[0] || "";
         return {
